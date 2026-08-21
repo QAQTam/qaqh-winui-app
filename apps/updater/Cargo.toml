@@ -27,5 +27,8 @@ windows = { version = "0.58", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"
+
 [lints]
 workspace = true

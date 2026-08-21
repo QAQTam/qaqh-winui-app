@@ -555,7 +555,7 @@ fn main() -> windows_reactor::Result<()> {
         );
     })));
     App::new()
-        .title("QAQ-Harness")
+        .title("QAQ Harness")
         .inner_size(1200.0, 800.0)
         .backdrop(Backdrop::Mica)
         // 退出诊断（reactor #4787 on_exit）：窗口全关后、进程退出前执行。

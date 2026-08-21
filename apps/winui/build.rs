@@ -44,4 +44,19 @@ fn stage_app_assets() {
 fn main() {
     windows_reactor_setup::as_self_contained();
     stage_app_assets();
+    embed_icon_resource();
+}
+
+/// 嵌入应用图标与版本信息（QAQ Harness）。
+///
+/// 图标来源：assets/app.ico（由设计稿 PNG 生成，16–256 多尺寸）。
+/// exe 首个图标资源即 WinUI 窗口/任务栏默认图标；仅 Windows 目标需要。
+fn embed_icon_resource() {
+    if cfg!(target_os = "windows") {
+        let mut res = winres::WindowsResource::new();
+        res.set_icon("assets/app.ico");
+        res.set("ProductName", "QAQ Harness");
+        res.set("FileDescription", "QAQ Harness 桌面应用");
+        res.compile().expect("embed icon resource");
+    }
 }
