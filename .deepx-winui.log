@@ -1,0 +1,16 @@
+[POLL:header] timer started
+[POLL:header_lang] timer started
+connect_client: connecting...
+[POLL:overlay] timer started
+[interaction_overlay] interaction key -> :
+ui pump timer created
+connect_client connect failed: io error: program not found
+refresh_sessions: connect failed: io error: program not found
+refresh_workspaces: connect failed: backend connect failed (concurrent attempt)
+refresh_sessions: connect failed: backend connect failed (concurrent attempt)refresh_workspaces: connect failed: backend connect failed (concurrent attempt)
+
+refresh_sessions: connect failed: backend connect failed (concurrent attempt)
+config_load: connect failed: backend connect failed (concurrent attempt)
+[POLL:header] rev 0 -> 1
+desktop notifications: initialized
+app exit: all windows closed (normal path)

@@ -1,0 +1,12 @@
+# 本地开发配置（勿提交含个人路径的改动）
+#
+# QAQH_WINMD_DIR：qaqh-app-notifications/build.rs 的 WinMD 输入目录。
+# 本机 WindowsApps 目录不可读且未装 Windows App Runtime，故从 NuGet 固定
+# 版本包（与 vendor pin 一致：microsoft.windowsappsdk 2.4.0 → Foundation
+# 2.3.9 / InteractiveExperiences 2.1.6）提取的 .winmd 放在 .tools/winmd/。
+# 提取方式见 README 或直接复跑：
+#   curl -sSL https://www.nuget.org/api/v2/package/<id>/<ver> -o pkg.nupkg
+#   tar -xf pkg.nupkg -C <tmp> && 拷贝 metadata/**/*.winmd 到 .tools/winmd/
+
+[env]
+QAQH_WINMD_DIR = "D:/project/qaqh-winui-app/.tools/winmd"

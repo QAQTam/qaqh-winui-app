@@ -1,7 +1,7 @@
 # Downstream 本地开发切换（windows-rs fork）
 #
 # QAQ-Harness 正式依赖 QAQTam/qaqh-winui-reactor-vendor 的 immutable snapshot commit（git rev）。
-# 开发下游代码时，把三个 manifest 临时切到本地仓库 F:\qaqh-winui-reactor-vendor，
+# 开发下游代码时，把四个 manifest 临时切到本地仓库 D:\project\qaqh-winui-reactor-vendor，
 # 验证完再切回 git rev。
 #
 # 用法（PowerShell 7）：
@@ -23,14 +23,15 @@ $ErrorActionPreference = "Stop"
 $Rev      = "1ee42c9ba622f9d8783de9f90e7773f9724fad9d"
 $GitUrl   = "https://github.com/QAQTam/qaqh-winui-reactor-vendor.git"
 $LocalDependency = "../../../qaqh-winui-reactor-vendor"  # manifest 中的相对 path
-$LocalRepo       = "F:/qaqh-winui-reactor-vendor"        # downstream 工作树
+$LocalRepo       = "D:/project/qaqh-winui-reactor-vendor" # downstream 工作树
 # -----------------------------------------------------------------------------
 
 $root = Split-Path -Parent $PSScriptRoot
 $manifests = @(
     (Join-Path $root "apps/winui/Cargo.toml"),
     (Join-Path $root "crates/qaqh-fluent/Cargo.toml"),
-    (Join-Path $root "crates/markdown-winui/Cargo.toml")
+    (Join-Path $root "crates/markdown-winui/Cargo.toml"),
+    (Join-Path $root "crates/qaqh-app-notifications/Cargo.toml")
 )
 
 function Git-Line([string]$crate) { "git = `"$GitUrl`", rev = `"$Rev`"" }
@@ -41,6 +42,11 @@ $crateFor = @{
     "windows-numerics"       = "numerics"
     "windows-reactor-setup"  = "reactor-setup"
     "windows"                = "windows"
+    "windows-core"           = "core"
+    "windows-collections"    = "collections"
+    "windows-future"         = "future"
+    "windows-time"           = "time"
+    "windows-bindgen"        = "bindgen"
 }
 
 function Test-PointingLocal([string]$text) {
