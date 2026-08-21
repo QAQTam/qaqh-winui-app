@@ -1,0 +1,15 @@
+[package]
+name = "qaqh-app-notifications"
+version = "1.0.0-rc.3"
+edition = "2024"
+description = "Microsoft.Windows.AppNotifications (Windows App SDK) WinMD bindings + QAQ-Harness wrapper"
+
+[dependencies]
+windows-core = { git = "https://github.com/QAQTam/qaqh-winui-reactor-vendor.git", rev = "1ee42c9" }
+windows-collections = { git = "https://github.com/QAQTam/qaqh-winui-reactor-vendor.git", rev = "1ee42c9" }
+windows-future = { git = "https://github.com/QAQTam/qaqh-winui-reactor-vendor.git", rev = "1ee42c9" }
+windows-time = { git = "https://github.com/QAQTam/qaqh-winui-reactor-vendor.git", rev = "1ee42c9" }
+windows = { git = "https://github.com/QAQTam/qaqh-winui-reactor-vendor.git", rev = "1ee42c9", default-features = false, features = ["ro", "libloaderapi"] }
+
+[build-dependencies]
+windows-bindgen = { git = "https://github.com/QAQTam/qaqh-winui-reactor-vendor.git", rev = "1ee42c9" }

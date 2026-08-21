@@ -1,0 +1,45 @@
+[package]
+name = "qaqh-installer"
+version.workspace = true
+edition = "2021"
+license.workspace = true
+description = "QAQ-Harness 桌面应用安装程序"
+
+[[bin]]
+name = "QAQ-HarnessInstaller"
+path = "src/main.rs"
+
+[dependencies]
+qaqh-update = { path = "../../../QAQ-Harness/crates/qaqh-update" }
+qaqh-types = { path = "../../../QAQ-Harness/crates/qaqh-types" }
+eframe = "0.29"
+egui = "0.29"
+
+windows = { version = "0.58", features = [
+    "Win32_UI_Shell",
+    "Win32_System_Com",
+    "Win32_System_Registry",
+    "Win32_Storage_FileSystem",
+    "Win32_Foundation",
+    "Win32_System_Ole",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_Security",
+    "Win32_System_Threading",
+    "Win32_System_Diagnostics",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+dirs = "6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11"
+hex = "0.4"
+regex-lite = "0.1"
+zip = "8.6"
+
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"
+
+[dev-dependencies]
+tempfile = "3"

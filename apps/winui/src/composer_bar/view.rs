@@ -1,0 +1,885 @@
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
+
+use windows_reactor::*;
+
+use qaqh_fluent::{motion, tokens};
+use qaqh_types::tool_mode::CUSTOM;
+
+use crate::bridge::{Bridge, ComposerAttachment, ComposerState, ComposerTextFile};
+use crate::shell_store::ContextStats;
+
+use super::status::{guess_image_mime, queue_row, work_status_bar};
+use super::*;
+
+pub fn composer_bar(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
+    let (state, set_state) = cx.use_state::<ComposerState>(ComposerState::default());
+    let timer = cx.use_ref::<Option<DispatcherTimer>>(None);
+    let last_rev = cx.use_ref::<u64>(0);
+    // 草稿：ref 真实存储 + 版本号驱动渲染（SetState 无 get，回调从 ref 读写）。
+    let draft = cx.use_ref::<Draft>(Draft::default());
+    let (_draft_version, set_draft_version) = cx.use_state::<u64>(0);
+    // 版本号真实存储（回调读 ref 递增，避免批处理下基于渲染值 +1 丢帧）。
+    let draft_ver = cx.use_ref::<u64>(0);
+    // sendAck/seed 基线（effect 比对用）。
+    let last_ack = cx.use_ref::<u64>(0);
+    let last_seed = cx.use_ref::<String>(String::new());
+    // Desktop editor sizing: content estimates grow the editor until the user
+    // takes ownership with the native pointer-captured resize handle.
+    let (input_height, set_input_height) = cx.use_state::<f64>(INPUT_DEFAULT_HEIGHT);
+    let (manual_height, set_manual_height) = cx.use_state::<bool>(false);
+    let (immersive, set_immersive) = cx.use_state::<bool>(false);
+    let resize_start = cx.use_ref::<Option<(f64, f64)>>(None);
+    // 上下文构成分布（输入框下常驻堆叠条）：daemon 回合结束写入
+    // context_stats.json（6 段 token 分布，同 Web ContextPanel 饼图）。
+    let (ctx_stats, set_ctx_stats) = cx.use_state::<Option<ContextStats>>(None);
+    let ctx_timer = cx.use_ref::<Option<DispatcherTimer>>(None);
+    let last_ctx_rev = cx.use_ref::<u64>(0);
+
+    // composer 投影轮询（250ms rev 比对）。
+    cx.use_effect((), {
+        let bridge = bridge.clone();
+        let set_state = set_state.clone();
+        let timer = timer.clone();
+        let last_rev = last_rev.clone();
+        move || {
+            crate::shell::poll_rev(
+                "composer",
+                timer,
+                last_rev,
+                POLL_INTERVAL,
+                move || bridge.core().composer_snapshot(),
+                move |s| set_state.call(s),
+            );
+        }
+    });
+
+    // 上下文构成轮询（context_stats 文件 mtime rev；文件缺失 → None）。
+    cx.use_effect((), {
+        let bridge = bridge.clone();
+        let set_ctx_stats = set_ctx_stats.clone();
+        let ctx_timer = ctx_timer.clone();
+        let last_ctx_rev = last_ctx_rev.clone();
+        move || {
+            crate::shell::poll_rev(
+                "composer_ctx",
+                ctx_timer,
+                last_ctx_rev,
+                POLL_INTERVAL,
+                move || bridge.core().context_stats_snapshot(),
+                move |s| set_ctx_stats.call(s),
+            );
+        }
+    });
+
+    // sendAck 变化 → 发送已确认 → 清空草稿（悲观清空，对齐 Web 成功路径）。
+    // seed 变化 → 会话切换 → 重置草稿（对齐 Web 新会话空输入）。
+    // deps 与闭包都捕获 clone 值，避免 move 闭包拿走 state 所有权。
+    let ack0 = state.send_ack;
+    let seed0 = state.seed.clone();
+    cx.use_effect((ack0, seed0.clone()), {
+        let draft = draft.clone();
+        let draft_ver = draft_ver.clone();
+        let last_ack = last_ack.clone();
+        let last_seed = last_seed.clone();
+        let set_draft_version = set_draft_version.clone();
+        move || {
+            let ack = ack0;
+            let seed = seed0.clone();
+            if ack != *last_ack.borrow() {
+                *last_ack.borrow_mut() = ack;
+                if ack > 0 {
+                    let mut d = draft.borrow_mut();
+                    for att in &d.attachments {
+                        remove_preview(att.preview_path.as_deref());
+                    }
+                    d.text.clear();
+                    d.attachments.clear();
+                    log_diag("sendAck: draft cleared");
+                }
+            }
+            if seed != *last_seed.borrow() {
+                *last_seed.borrow_mut() = seed;
+                let mut d = draft.borrow_mut();
+                for att in &d.attachments {
+                    remove_preview(att.preview_path.as_deref());
+                }
+                d.text.clear();
+                d.attachments.clear();
+                d.selected_slash = 0;
+                d.dismissed_slash = None;
+                log_diag("seed changed: draft reset");
+            }
+            let v = *draft_ver.borrow() + 1;
+            *draft_ver.borrow_mut() = v;
+            set_draft_version.call(v);
+        }
+    });
+
+    // ── 回调（Arc 共享 + ref 读写；渲染时捕获 state 快照）───────────
+    let has_pending_gate = state.has_pending_gate;
+    let is_streaming = state.is_streaming;
+
+    // 文本输入：更新草稿 + 重置 slash 导航（对齐 Web updateText）。
+    // 自动高度用简单换行计数（避免逐字符 O(n²) 扫描），只在行数变化时触发。
+    let last_auto_height = cx.use_ref::<f64>(INPUT_DEFAULT_HEIGHT);
+    let on_text_changed = {
+        let draft = draft.clone();
+        let draft_ver = draft_ver.clone();
+        let set_draft_version = set_draft_version.clone();
+        let set_input_height = set_input_height.clone();
+        let last_auto = last_auto_height.clone();
+        move |value: String| {
+            if !manual_height && !immersive {
+                let line_count = value.as_bytes().iter().filter(|&&b| b == b'\n').count() + 1;
+                let target = (44.0 + line_count as f64 * 20.0)
+                    .clamp(INPUT_MIN_HEIGHT, INPUT_AUTO_MAX_HEIGHT);
+                let prev = *last_auto.borrow();
+                if (target - prev).abs() > 1.0 {
+                    *last_auto.borrow_mut() = target;
+                    set_input_height.call(target);
+                }
+            }
+            let mut d = draft.borrow_mut();
+            d.text = value;
+            d.selected_slash = 0;
+            d.dismissed_slash = None;
+            drop(d);
+            let v = *draft_ver.borrow() + 1;
+            *draft_ver.borrow_mut() = v;
+            set_draft_version.call(v);
+        }
+    };
+
+    // 提交：校验 → emit Send（附件传路径，base64 由 Web 侧读）。
+    let on_submit: Arc<dyn Fn() + 'static> = Arc::new({
+        let bridge = bridge.clone();
+        let draft = draft.clone();
+        let draft_ver = draft_ver.clone();
+        let set_draft_version = set_draft_version.clone();
+        let has_pending_gate = has_pending_gate;
+        move || {
+            let d = draft.borrow();
+            let text = d.text.trim().to_string();
+            if (text.is_empty() && d.attachments.is_empty()) || has_pending_gate {
+                return;
+            }
+            let mut image_paths: Vec<ComposerAttachment> = Vec::new();
+            let mut text_files: Vec<ComposerTextFile> = Vec::new();
+            for att in &d.attachments {
+                match &att.kind {
+                    AttachmentKind::Image { mime_type } => image_paths.push(ComposerAttachment {
+                        file_name: att.file_name.clone(),
+                        mime_type: mime_type.clone(),
+                        path: att.path.clone(),
+                    }),
+                    AttachmentKind::Text => text_files.push(ComposerTextFile {
+                        file_name: att.file_name.clone(),
+                        path: att.path.clone(),
+                    }),
+                }
+            }
+            drop(d);
+            log_diag("composer send emitted");
+            // 直连动作：协议请求 Rust 直发（附件上传 ContentRef 后发命令）。
+            bridge.spawn_send_message(text, image_paths, text_files);
+            // 悲观清空（对齐 Web sendAck 语义）：提交即清空草稿/附件。
+            {
+                let mut d = draft.borrow_mut();
+                d.text = String::new();
+                d.attachments.clear();
+                d.selected_slash = 0;
+                d.dismissed_slash = None;
+                drop(d);
+                let v = *draft_ver.borrow() + 1;
+                *draft_ver.borrow_mut() = v;
+                set_draft_version.call(v);
+            }
+        }
+    });
+
+    // 附件选择（STA 直调对话框 + 读元数据；用户取消返回 null 不动作）。
+    let on_pick_image = {
+        let bridge = bridge.clone();
+        let draft = draft.clone();
+        let draft_ver = draft_ver.clone();
+        let set_draft_version = set_draft_version.clone();
+        move || match bridge.pick_image_file() {
+            Ok(serde_json::Value::String(path)) => {
+                let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                let file_name = path
+                    .split(['/', '\\'])
+                    .last()
+                    .unwrap_or("image")
+                    .to_string();
+                let mime_type = guess_image_mime(&file_name);
+                let id = format!("att-{}-{}", ATT_ID.fetch_add(1, Ordering::Relaxed), size);
+                // 缩略图预览：复制到 %TEMP%（WinUI Image 不支持 base64）。
+                let preview_path = write_preview_copy(&path, &id);
+                let mut d = draft.borrow_mut();
+                d.attachments.push(AttachmentItem {
+                    id,
+                    kind: AttachmentKind::Image { mime_type },
+                    file_name,
+                    size,
+                    path,
+                    preview_path,
+                });
+                drop(d);
+                let v = *draft_ver.borrow() + 1;
+                *draft_ver.borrow_mut() = v;
+                set_draft_version.call(v);
+            }
+            _ => {}
+        }
+    };
+    let on_pick_text = {
+        let bridge = bridge.clone();
+        let draft = draft.clone();
+        let draft_ver = draft_ver.clone();
+        let set_draft_version = set_draft_version.clone();
+        move || match bridge.pick_text_file() {
+            Ok(serde_json::Value::String(path)) => {
+                let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                let file_name = path.split(['/', '\\']).last().unwrap_or("file").to_string();
+                let mut d = draft.borrow_mut();
+                d.attachments.push(AttachmentItem {
+                    id: format!("att-{}-{}", ATT_ID.fetch_add(1, Ordering::Relaxed), size),
+                    kind: AttachmentKind::Text,
+                    file_name,
+                    size,
+                    path,
+                    preview_path: None,
+                });
+                drop(d);
+                let v = *draft_ver.borrow() + 1;
+                *draft_ver.borrow_mut() = v;
+                set_draft_version.call(v);
+            }
+            _ => {}
+        }
+    };
+    // 移除附件（按 id；顺带删预览临时文件）。
+    let on_remove_attach: Arc<dyn Fn(String) + 'static> = Arc::new({
+        let draft = draft.clone();
+        let draft_ver = draft_ver.clone();
+        let set_draft_version = set_draft_version.clone();
+        move |id: String| {
+            let mut d = draft.borrow_mut();
+            if let Some(att) = d.attachments.iter().find(|a| a.id == id) {
+                remove_preview(att.preview_path.as_deref());
+            }
+            d.attachments.retain(|a| a.id != id);
+            drop(d);
+            let v = *draft_ver.borrow() + 1;
+            *draft_ver.borrow_mut() = v;
+            set_draft_version.call(v);
+        }
+    });
+    // footer 动作（直连动作：协议请求 Rust 直发，不再回传 Web）。
+    let on_mode_toggle = {
+        let bridge = bridge.clone();
+        let mode = state.mode.clone();
+        move || {
+            let next = if mode == "plan" { "code" } else { "plan" };
+            bridge.spawn_set_mode(next);
+        }
+    };
+    let on_permission: Arc<dyn Fn(u64) + 'static> = Arc::new({
+        let bridge = bridge.clone();
+        move |level: u64| {
+            bridge.spawn_set_permission(level);
+        }
+    });
+    // 工具模式六选一（标准/极限·8/极限·6/极限·4/极简/创造）；创造模式用预设基底 custom_tools。
+    let on_tool_mode: Arc<dyn Fn(i32) + 'static> = Arc::new({
+        let bridge = bridge.clone();
+        move |index: i32| {
+            let mode = tool_mode_from_index(index);
+            let custom_tools = if mode == CUSTOM {
+                CUSTOM_MODE_DEFAULT_TOOLS
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            bridge.spawn_set_tool_mode(mode, custom_tools);
+        }
+    });
+    let on_stop = {
+        let bridge = bridge.clone();
+        move || {
+            bridge.spawn_conversation_command(
+                qaqh_client::ConversationCommand::ConversationCancel { turn_id: None },
+            )
+        }
+    };
+    // 队列移除：queue 已随 B 组本地化恒空（本地无排队概念，WebView 移除），
+    // 保留绑定签名兼容 queue_row，但无实际动作。
+    let on_queue_remove: Arc<dyn Fn(String) + 'static> = Arc::new({
+        let _bridge = bridge.clone();
+        move |_id: String| {}
+    });
+
+    // ── 渲染时读取草稿（版本号变化触发本函数重跑）────────────────
+    let d = draft.borrow();
+    let text = d.text.clone();
+    let attachments = d.attachments.clone();
+    let selected_slash = d.selected_slash;
+    let dismissed = d.dismissed_slash.clone();
+    // slash 菜单可见性（对齐 Web visibleSlashCommands）。
+    let slash_cmds = if dismissed.as_deref() == Some(text.as_str()) {
+        Vec::new()
+    } else {
+        match_slash_commands(&text)
+    };
+    let slash_visible = !slash_cmds.is_empty();
+    drop(d);
+
+    // Enter 发送 accelerator（菜单可见时 Enter = 选中命令，否则发送）。
+    let on_enter = {
+        let draft = draft.clone();
+        let draft_ver = draft_ver.clone();
+        let set_draft_version = set_draft_version.clone();
+        let slash_cmds = slash_cmds.clone();
+        let selected_slash = selected_slash;
+        let on_submit = on_submit.clone();
+        move || {
+            if !slash_cmds.is_empty() {
+                let idx = selected_slash % slash_cmds.len();
+                let (cmd, _, _) = &slash_cmds[idx];
+                let mut d = draft.borrow_mut();
+                d.text = cmd.clone();
+                d.selected_slash = 0;
+                d.dismissed_slash = Some(cmd.clone());
+                drop(d);
+                let v = *draft_ver.borrow() + 1;
+                *draft_ver.borrow_mut() = v;
+                set_draft_version.call(v);
+            } else {
+                on_submit();
+            }
+        }
+    };
+    // 菜单导航（仅菜单可见时绑定 ↓↑ Esc）。
+    let on_slash_next = {
+        let draft = draft.clone();
+        let draft_ver = draft_ver.clone();
+        let set_draft_version = set_draft_version.clone();
+        let len = slash_cmds.len();
+        move || {
+            let mut d = draft.borrow_mut();
+            d.selected_slash = (d.selected_slash + 1) % len.max(1);
+            drop(d);
+            let v = *draft_ver.borrow() + 1;
+            *draft_ver.borrow_mut() = v;
+            set_draft_version.call(v);
+        }
+    };
+    let on_slash_prev = {
+        let draft = draft.clone();
+        let draft_ver = draft_ver.clone();
+        let set_draft_version = set_draft_version.clone();
+        let len = slash_cmds.len();
+        move || {
+            let mut d = draft.borrow_mut();
+            d.selected_slash = (d.selected_slash + len - 1) % len.max(1);
+            drop(d);
+            let v = *draft_ver.borrow() + 1;
+            *draft_ver.borrow_mut() = v;
+            set_draft_version.call(v);
+        }
+    };
+    let on_slash_dismiss = {
+        let draft = draft.clone();
+        let draft_ver = draft_ver.clone();
+        let set_draft_version = set_draft_version.clone();
+        let text = text.clone();
+        move || {
+            let mut d = draft.borrow_mut();
+            d.dismissed_slash = Some(text.clone());
+            drop(d);
+            let v = *draft_ver.borrow() + 1;
+            *draft_ver.borrow_mut() = v;
+            set_draft_version.call(v);
+        }
+    };
+    // 菜单项点击选中。
+    let on_slash_pick: Arc<dyn Fn(String) + 'static> = Arc::new({
+        let draft = draft.clone();
+        let draft_ver = draft_ver.clone();
+        let set_draft_version = set_draft_version.clone();
+        move |cmd: String| {
+            let mut d = draft.borrow_mut();
+            d.text = cmd.clone();
+            d.selected_slash = 0;
+            d.dismissed_slash = Some(cmd);
+            drop(d);
+            let v = *draft_ver.borrow() + 1;
+            *draft_ver.borrow_mut() = v;
+            set_draft_version.call(v);
+        }
+    });
+
+    // ── 渲染树 ───────────────────────────────────────────────────
+    let placeholder = if has_pending_gate {
+        "请先处理当前授权请求"
+    } else {
+        "向 QAQ-Harness 提问…"
+    };
+
+    // TextBox + Enter accelerator（菜单可见时附加 ↓↑ Esc）。
+    let mut input: Element = text_box(text.clone())
+        .multiline()
+        .placeholder_text(placeholder)
+        .height(input_height)
+        .on_text_changed(on_text_changed)
+        .keyboard_accelerator(KeyboardAccelerator::new(
+            VirtualKey::Enter,
+            VirtualKeyModifiers::None,
+            on_enter,
+        ))
+        .automation_name("消息输入")
+        .automation_id("composer-input")
+        .with_key("composer-textbox")
+        .into();
+    if slash_visible {
+        input = input
+            .keyboard_accelerator(KeyboardAccelerator::new(
+                VirtualKey::Down,
+                VirtualKeyModifiers::None,
+                on_slash_next,
+            ))
+            .keyboard_accelerator(KeyboardAccelerator::new(
+                VirtualKey::Up,
+                VirtualKeyModifiers::None,
+                on_slash_prev,
+            ))
+            .keyboard_accelerator(KeyboardAccelerator::new(
+                VirtualKey::Escape,
+                VirtualKeyModifiers::None,
+                on_slash_dismiss,
+            ));
+    }
+
+    // 原生附件菜单：让 WinUI 负责弹层、焦点、键盘和无障碍语义。
+    let attach_button = button("")
+        .icon(Symbol::Attach)
+        .subtle()
+        .menu_flyout(vec![menu_item("上传图片"), menu_item("上传文本")])
+        .on_item_clicked(move |label: String| match label.as_str() {
+            "上传图片" => on_pick_image(),
+            "上传文本" => on_pick_text(),
+            _ => {}
+        })
+        .tooltip("添加附件")
+        .automation_name("添加附件")
+        .automation_id("composer-attach");
+
+    // 附件预览行（图片：缩略图 + 文件名；文本：类型徽标 + 文件名）。
+    let mut attach_rows: Vec<Element> = Vec::new();
+    for (i, att) in attachments.iter().enumerate() {
+        // 图片缩略图：file:// URI 加载 %TEMP% 预览副本（48x48，等比裁切）。
+        let thumb: Element = match (&att.kind, &att.preview_path) {
+            (AttachmentKind::Image { .. }, Some(p)) => {
+                let uri = format!("file:///{}", p.replace('\\', "/"));
+                border(
+                    Image::new_with_uri(uri)
+                        .width(48.0)
+                        .height(48.0)
+                        .stretch(Stretch::UniformToFill),
+                )
+                .corner_radius(4.0)
+                .into()
+            }
+            (AttachmentKind::Image { .. }, None) => qaqh_fluent::metadata_badge("IMG"),
+            (AttachmentKind::Text, _) => qaqh_fluent::metadata_badge("TXT"),
+        };
+        let remove_name = format!("移除附件 {}", att.file_name);
+        let row: Element = qaqh_fluent::inset_surface(
+            hstack((
+                thumb,
+                text_block(format!("{} ({})", att.file_name, att.size_label()))
+                    .font_size(tokens::TYPE_CAPTION)
+                    .foreground(ThemeRef::SecondaryText),
+                button("")
+                    .icon(Symbol::Cancel)
+                    .subtle()
+                    .tooltip(remove_name.clone())
+                    .automation_name(remove_name)
+                    .automation_id(format!("composer-remove-{}", att.id))
+                    .on_click({
+                        let on_remove_attach = on_remove_attach.clone();
+                        let id = att.id.clone();
+                        move || on_remove_attach(id.clone())
+                    }),
+            ))
+            .spacing(tokens::SPACE_2),
+        )
+        .transition(motion::reveal(), motion::content_exit())
+        .automation_name(format!("附件 {}", att.file_name));
+        attach_rows.push(row.with_key(format!("att-{i}-{}", att.id)));
+    }
+    let attach_preview: Element = if attach_rows.is_empty() {
+        grid(()).into()
+    } else {
+        vstack(attach_rows).spacing(tokens::SPACE_1).into()
+    };
+
+    // submitError 行（Web 失败回填；壳保留草稿不清空）。
+    let error_row: Element = if state.submit_error.is_empty() {
+        grid(()).into()
+    } else {
+        text_block(&state.submit_error)
+            .font_size(tokens::TYPE_CAPTION)
+            .foreground(ThemeRef::SystemCritical)
+            .wrap()
+            .accessibility_live_setting(AutomationLiveSetting::Assertive)
+            .automation_name(format!("发送失败：{}", state.submit_error))
+            .automation_id("composer-submit-error")
+            .into()
+    };
+
+    // 发送/停止按钮。
+    let can_send = (!text.trim().is_empty() || !attachments.is_empty()) && !has_pending_gate;
+    let send_stop: Element = if is_streaming {
+        button("")
+            .icon(Symbol::Stop)
+            .subtle()
+            .tooltip("停止生成")
+            .automation_name("停止生成")
+            .automation_id("composer-stop")
+            .on_click(on_stop)
+            .into()
+    } else {
+        button("")
+            .icon(Symbol::Send)
+            .accent()
+            .enabled(can_send)
+            .tooltip("发送消息 (Enter)")
+            .automation_name("发送消息")
+            .automation_id("composer-send")
+            .on_click({
+                let cb = on_submit.clone();
+                move || cb()
+            })
+            .into()
+    };
+
+    // 四档权限属于 4+ 单选集合，用 ComboBox 避免网页式 pill 兼容层。
+    // permission_level==0（config 未加载/失败）：SelectedIndex=-1（WinUI 无选中
+    // 空白），避免 0.saturating_sub(1)=0 显示成 L1 误导用户以为被重置。
+    let pl = state.permission_level;
+    let permission_picker: Element = qaqh_fluent::solid_combo_box(["L1", "L2", "L3", "L4"])
+        .selected_index(if pl == 0 {
+            -1
+        } else {
+            pl.saturating_sub(1).min(3) as i32
+        })
+        .on_selection_changed({
+            let on_permission = on_permission.clone();
+            // 防程序化同步误触发：WinUI 渲染应用 SelectedIndex（如 -1→0）也会
+            // 触发 SelectionChanged，回调里 index+1 与渲染时的实际权限一致则
+            // 视为同步事件，跳过——否则冷启动/重渲染会把权限误写成 L1。
+            // 防护补洞：rendered_pl==0（config 未加载，SelectedIndex=-1 被
+            // WinUI 规范化为 0 → index+1=1 ≠ 0）时任何 SelectionChanged 都是
+            // 程序化同步事件，一律跳过——此前该窗口未闭合导致每次启动都把
+            // 权限误写成 L1 并持久化（Bug#2）。
+            let rendered_pl = pl;
+            move |index: i32| {
+                if rendered_pl == 0 {
+                    return;
+                }
+                if index >= 0 {
+                    let lvl = (index + 1) as u64;
+                    if lvl != rendered_pl {
+                        on_permission(lvl);
+                    }
+                }
+            }
+        })
+        .width(80.0)
+        .tooltip("权限级别")
+        .automation_name("权限级别")
+        .automation_id("composer-permission-level")
+        .into();
+
+    // 工具模式六选一（标准/极限·8/极限·6/极限·4/极简/创造；PLAN-TOOL-MODES.md）。
+    // 空态（新会话 meta.tool_mode 为空）渲染为 standard(0) 而非 -1：-1 会被 WinUI
+    // 规范化触发程序化 SelectionChanged，而旧守卫把所有空态 SelectionChanged 都当
+    // 同步事件丢弃，导致空态会话的工具模式选择永久失效（BUG-017）。放行/跳过判定
+    // 收敛到 `tool_mode_change_is_user`（mod.rs），覆盖挂载/会话切换同步与用户点击。
+    let tm = state.tool_mode.clone();
+    let tool_mode_picker: Element = qaqh_fluent::solid_combo_box(TOOL_MODE_OPTIONS)
+        .selected_index(tool_mode_index(&tm))
+        .on_selection_changed({
+            let rendered_tm = tm;
+            move |index: i32| {
+                if !tool_mode_change_is_user(&rendered_tm, index) {
+                    log_diag(&format!(
+                        "tool_mode: sync event skipped (rendered='{rendered_tm}' index={index})"
+                    ));
+                    return;
+                }
+                on_tool_mode(index);
+            }
+        })
+        .width(88.0)
+        .tooltip("工具模式")
+        .automation_name("工具模式")
+        .automation_id("composer-tool-mode")
+        .into();
+
+    let mode_button: Element = button(if state.mode == "plan" {
+        "规划"
+    } else {
+        "执行"
+    })
+    .subtle()
+    .tooltip("切换工作模式")
+    .automation_name("工作模式")
+    .automation_id("composer-mode")
+    .on_click(on_mode_toggle)
+    .into();
+    let immersive_button: Element = button("")
+        .icon(Icon::symbol(if immersive {
+            Symbol::BackToWindow
+        } else {
+            Symbol::FullScreen
+        }))
+        .subtle()
+        .tooltip(if immersive {
+            "退出沉浸式编辑"
+        } else {
+            "展开编辑器"
+        })
+        .automation_name(if immersive {
+            "退出沉浸式编辑"
+        } else {
+            "展开编辑器"
+        })
+        .automation_id("composer-immersive")
+        .on_click({
+            let set_immersive = set_immersive.clone();
+            let set_manual_height = set_manual_height.clone();
+            let set_input_height = set_input_height.clone();
+            move || {
+                let next = !immersive;
+                set_immersive.call(next);
+                set_manual_height.call(false);
+                set_input_height.call(if next {
+                    INPUT_MANUAL_MAX_HEIGHT
+                } else {
+                    INPUT_DEFAULT_HEIGHT
+                });
+            }
+        })
+        .into();
+
+    // Grid provides real left/right command groups. A horizontal StackPanel
+    // cannot emulate a web flex spacer because it measures children at infinity.
+    let footer: Element = grid((
+        attach_button.grid_column(0),
+        tool_mode_picker.grid_column(1),
+        mode_button.grid_column(2),
+        immersive_button.grid_column(3),
+        hstack((permission_picker,))
+            .spacing(tokens::SPACE_2)
+            .vertical_alignment(VerticalAlignment::Center)
+            .grid_column(5),
+        send_stop.grid_column(6),
+    ))
+    .columns([
+        GridLength::Auto,
+        GridLength::Auto,
+        GridLength::Auto,
+        GridLength::Auto,
+        GridLength::STAR,
+        GridLength::Auto,
+        GridLength::Auto,
+    ])
+    .column_spacing(tokens::SPACE_2)
+    .into();
+
+    // Twelve-DIP hit target with a quiet two-DIP visual grip. Dragging upward
+    // grows the editor; tapping returns ownership to automatic sizing.
+    let grip: Element = border(text_block(""))
+        .width(40.0)
+        .height(2.0)
+        .corner_radius(1.0)
+        .background(ThemeRef::DividerStroke)
+        .horizontal_alignment(HorizontalAlignment::Center)
+        .into();
+    let resize_handle: Element = border(grip)
+        .height(12.0)
+        .capture_pointer_on_press()
+        .on_pointer_pressed({
+            let resize_start = resize_start.clone();
+            move |info: PointerEventInfo| {
+                *resize_start.borrow_mut() = Some((info.window_y, input_height));
+            }
+        })
+        .on_pointer_moved({
+            let resize_start = resize_start.clone();
+            let set_input_height = set_input_height.clone();
+            let set_manual_height = set_manual_height.clone();
+            move |info: PointerEventInfo| {
+                if !info.is_left_button_pressed {
+                    return;
+                }
+                let Some((start_y, start_height)) = *resize_start.borrow() else {
+                    return;
+                };
+                set_manual_height.call(true);
+                set_input_height.call(
+                    (start_height - (info.window_y - start_y))
+                        .clamp(INPUT_MIN_HEIGHT, INPUT_MANUAL_MAX_HEIGHT),
+                );
+            }
+        })
+        .on_pointer_released({
+            let resize_start = resize_start.clone();
+            move |_| *resize_start.borrow_mut() = None
+        })
+        .on_pointer_capture_lost({
+            let resize_start = resize_start.clone();
+            move || *resize_start.borrow_mut() = None
+        })
+        .on_tapped({
+            let set_manual_height = set_manual_height.clone();
+            let set_input_height = set_input_height.clone();
+            move || {
+                set_manual_height.call(false);
+                set_input_height.call(INPUT_DEFAULT_HEIGHT);
+            }
+        })
+        .tooltip("拖动调整输入框高度；单击恢复自动高度")
+        .automation_name("调整输入框高度")
+        .automation_id("composer-resize-handle")
+        .into();
+
+    // 上下文构成堆叠条（输入框下常驻）：6 段 token 分布（对齐 Web
+    // ContextPanel 饼图语义：对话/思考/工具调用/工具结果/工具定义/系统提示），
+    // 加权 Star 列按占比分宽，段间 1px 间隔，语义色 + tooltip。
+    // 悬停命中：4px 条 + 整行容器都挂 tooltip（细条难 hover，容器兜底）。
+    // 文件缺失或全零（无会话/回合未结束）时隐藏。
+    let ctx_bar: Element = match ctx_stats.as_ref() {
+        Some(s) if s.total() > 0 => {
+            let total = s.total();
+            let segs: [(u64, &str, ThemeRef); 6] = [
+                (s.chat_text, "对话", ThemeRef::Accent),
+                (s.thinking, "思考", ThemeRef::SystemCaution),
+                (s.tool_calls, "工具调用", ThemeRef::SystemAttention),
+                (s.tool_results, "工具结果", ThemeRef::SystemSuccess),
+                (s.tools_schema, "工具定义", ThemeRef::SystemNeutral),
+                (s.system_prompt, "系统提示", ThemeRef::SystemCritical),
+            ];
+            let mut cells: Vec<Element> = Vec::with_capacity(6);
+            let mut weights: Vec<GridLength> = Vec::with_capacity(6);
+            // 容器 tooltip：完整构成（多行，ToolTip TextBlock 支持 \n）。
+            let mut summary = String::from("上下文构成");
+            for (i, (v, name, color)) in segs.iter().enumerate() {
+                let pct = *v as f64 * 100.0 / total as f64;
+                cells.push(
+                    border(text_block(""))
+                        .background(color.clone())
+                        .tooltip(format!("{name} {pct:.1}% · {} tokens", fmt_thousands(*v)))
+                        .automation_name(format!("{name} {pct:.1}%"))
+                        .grid_column(i as i32)
+                        .into(),
+                );
+                // 权重 0 的段给极小值（Star(0) 列不参与分配）。
+                weights.push(GridLength::Star((*v as f64).max(0.001)));
+                summary.push_str(&format!(
+                    "\n{name} {pct:.1}% · {} tokens",
+                    fmt_thousands(*v)
+                ));
+            }
+            grid((
+                border(grid(cells).columns(weights).column_spacing(1.0))
+                    .height(4.0)
+                    .corner_radius(2.0)
+                    .tooltip(summary.clone())
+                    .automation_name(summary)
+                    .grid_column(0),
+                text_block(format!("{} tokens", fmt_thousands(total)))
+                    .font_size(11.0)
+                    .foreground(ThemeRef::SecondaryText)
+                    .grid_column(1),
+            ))
+            .columns([GridLength::STAR, GridLength::Auto])
+            .column_spacing(tokens::SPACE_2)
+            .with_key("ctx-bar")
+            .into()
+        }
+        _ => grid(()).with_key("ctx-bar-empty").into(),
+    };
+
+    // 持久命令表面使用 LayerFill；边框/圆角由共享 Fluent primitive 统一。
+    let card: Element = qaqh_fluent::command_surface(
+        vstack((
+            resize_handle,
+            input,
+            error_row,
+            attach_preview,
+            footer,
+            ctx_bar,
+        ))
+        .spacing(tokens::SPACE_2)
+        .padding(tokens::SPACE_3),
+    )
+    .automation_name("消息编辑器")
+    .automation_id("composer-surface");
+
+    // 队列行（queue_count > 0 时）。
+    let queue_bar: Element = if state.queue_count > 0 {
+        queue_row(&state, on_queue_remove)
+    } else {
+        grid(()).into()
+    };
+
+    // slash 菜单（可见时；composer 卡片上方 cell）。
+    let slash_menu: Element = if slash_visible {
+        let mut items: Vec<Element> = Vec::new();
+        for (i, (cmd, label, desc)) in slash_cmds.iter().enumerate() {
+            let selected = i == selected_slash;
+            let mut opt = button(format!("{cmd}  {label}  {desc}"))
+                .subtle()
+                .automation_name(format!("选择命令 {cmd}"))
+                .automation_id(format!("composer-slash-{i}"))
+                .on_click({
+                    let on_slash_pick = on_slash_pick.clone();
+                    let cmd = cmd.clone();
+                    move || on_slash_pick(cmd.clone())
+                });
+            if selected {
+                opt = opt.accent();
+            }
+            items.push(opt.into());
+        }
+        border(vstack(items).spacing(2.0).padding(6.0))
+            .corner_radius(6.0)
+            .background(ThemeRef::CardBackground)
+            .transition(motion::reveal(), motion::content_exit())
+            .with_key("composer-slash-menu")
+            .into()
+    } else {
+        grid(()).into()
+    };
+
+    // 工作状态栏（输入框之上最顶行；活动时显示，空闲零高占位）。
+    let status_bar = work_status_bar(cx, &state);
+
+    vstack((status_bar, queue_bar, slash_menu, card))
+        .spacing(tokens::SPACE_2)
+        .padding(Thickness {
+            left: tokens::SPACE_6,
+            top: tokens::SPACE_3,
+            right: tokens::SPACE_6,
+            bottom: tokens::SPACE_3,
+        })
+        .max_width(tokens::CONVERSATION_MAX_WIDTH)
+        .horizontal_alignment(HorizontalAlignment::Stretch)
+        .into()
+}

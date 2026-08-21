@@ -1,0 +1,98 @@
+//! XAML 原生设置页（P2）— SettingsView 的壳侧承载（路线图 Phase 3 首块）。
+//!
+//! 数据源：`bridge.core().settings_snapshot()`——`config.load` + `skills.list_tools`
+//! + `workspace.status` 合并投影（shell_store::parse_config_load 等）；
+//! 500ms rev 比对轮询（同 skills_view 模式）；首次进入 `spawn_config_load(false)`
+//! 兜底拉取。
+//!
+//! 状态模型（D-2 执行权原则，壳/daemon 为数据源）：
+//!   - 表单字段为本地草稿（use_state），"保存"按钮一次性 `config.save` 全字段
+//!     （camelCase，对齐协议 `save()`）；rev 变化且无未保存修改时刷新草稿；
+//!   - lang / fontFamily 等经 `config.save` 提交；theme 本地即时应用且随
+//!     `config.save` 持久化（2026-08 后端新增 `theme` 契约字段）；
+//!     permissionLevel 经 `config.set_permission_level` 直连；
+//!   - workspace 运行模式：`workspace.set_mode` 壳直连；backend.restart 未实现
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use windows_reactor::*;
+
+use crate::bridge::{Bridge, SettingsProjection};
+use crate::shell_store::SettingsSnapshot;
+
+mod sections;
+mod view;
+
+pub use view::settings_view;
+
+/// 快照轮询间隔（同 sidebar / skills_view）。
+const POLL_INTERVAL: Duration = Duration::from_millis(500);
+
+/// 分类定义（id + 中文标签 + Fluent Symbol，对齐 Web `categories()`）。
+const CATEGORIES: [(&str, &str, Symbol); 9] = [
+    ("models", "模型", Symbol::Library),
+    ("api", "API 密钥", Symbol::Setting),
+    ("context", "上下文", Symbol::Document),
+    ("subagent", "子代理", Symbol::People),
+    ("workspace", "工具套件", Symbol::AllApps),
+    ("appearance", "外观", Symbol::Pictures),
+    ("multimodal", "多模态", Symbol::Camera),
+    ("advanced", "高级", Symbol::Repair),
+    ("remote", "远端连接", Symbol::Globe),
+];
+
+/// effort 档位（对齐 Web EFFORT_LADDER）。
+const EFFORT_LADDER: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
+/// 工作区运行模式（对齐 Web workspace.mode 取值）。
+const WORKSPACE_MODES: [&str; 3] = ["local", "wsl", "remote"];
+/// 权限档位滑杆（UAC 安全设置范式）：标题 + 描述，随滑杆实时切换。
+const PERMISSION_LADDER: [(&str, &str); 4] = [
+    ("Level 1 · 最大锁定", "每个工具调用都需要你确认，最安全。"),
+    (
+        "Level 2 · 读取自由",
+        "工作区读取自动批准；写入、执行、网络操作需要确认。",
+    ),
+    (
+        "Level 3 · 工作区自由",
+        "工作区内操作自动批准；跨工作区写入需要一次性文件夹信任。",
+    ),
+    ("Level 4 · 不受限", "无权限检查（默认）。谨慎使用。"),
+];
+/// 滑杆档位短标签（对齐滑杆刻度）。
+const PERMISSION_TICKS: [&str; 4] = ["保守", "询问", "自动", "全自动"];
+
+/// Windows 11 SettingsCard 语义行：标题/说明 + 右侧原生控件。
+fn field_row(label: &str, control: Element) -> Element {
+    qaqh_fluent::settings_card(label, "", control)
+}
+
+/// 分类标题（h2 语义）。
+fn section_title(text: &str) -> Element {
+    qaqh_fluent::settings_section_header(text, "")
+}
+
+/// 设置页各分类区块共享的渲染上下文。
+///
+/// 由 `settings_view` 在创建完所有 hooks 后构造，只读传给各 section 函数；
+/// section 内部不再调用 `use_state` / `use_ref`（保证 hooks 顺序稳定）。
+pub(crate) struct SettingsCtx {
+    pub(crate) bridge: Arc<Bridge>,
+    pub(crate) draft: HookRef<SettingsSnapshot>,
+    pub(crate) proj_draft: HookRef<SettingsProjection>,
+    pub(crate) dirty: HookRef<bool>,
+    pub(crate) d: SettingsSnapshot,
+    pub(crate) pd: SettingsProjection,
+    pub(crate) set_diag_rev: SetState<u32>,
+    pub(crate) set_perm_desc: SetState<u8>,
+    pub(crate) set_export_path: SetState<Option<String>>,
+    pub(crate) diag_rev: u32,
+    pub(crate) perm_desc: u8,
+    pub(crate) export_path: Option<String>,
+    pub(crate) remote_url: String,
+    pub(crate) remote_token: String,
+    pub(crate) remote_status: String,
+    pub(crate) set_remote_url: SetState<String>,
+    pub(crate) set_remote_token: SetState<String>,
+    pub(crate) set_remote_status: SetState<String>,
+}

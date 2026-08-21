@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = [
+    "apps/installer",
+    "apps/updater",
+    "apps/winui",
+    "crates/qaqh-app-notifications",
+    "crates/qaqh-fluent",
+    "crates/markdown-core",
+    "crates/markdown-winui",
+]
+
+[workspace.package]
+version = "0.0.0-alpha.0"
+edition = "2024"
+license = "MIT"
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
+codegen-units = 1
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+string_slice = "deny"
