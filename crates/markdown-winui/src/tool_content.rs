@@ -1,7 +1,8 @@
 use windows_reactor::{
-    AccessibilityExt, BackgroundExt, ColorScheme, Element, GridChildExt, GridLength, HorizontalAlignment, KeyExt, LayoutExt, PaddingExt, TextStyleExt, ScrollBarVisibility,
-    TextWrapping, ThemeRef, Thickness, VerticalAlignment, border, grid,
-    scroll_viewer, text_block, vstack,
+    AccessibilityExt, BackgroundExt, ColorScheme, Element, GridChildExt, GridLength,
+    HorizontalAlignment, KeyExt, LayoutExt, PaddingExt, ScrollBarVisibility, TextStyleExt,
+    TextWrapping, ThemeRef, Thickness, VerticalAlignment, border, grid, scroll_viewer, text_block,
+    vstack,
 };
 
 use crate::{CodeBlock, highlighted_code_block};
@@ -544,10 +545,7 @@ fn merge_diff_by_file(document: &mut DiffDocument) {
     let mut merged: Vec<DiffFile> = Vec::new();
     for file in std::mem::take(&mut document.files) {
         let path = file.display_path().to_string();
-        if let Some(existing) = merged
-            .iter_mut()
-            .find(|f| f.display_path() == path)
-        {
+        if let Some(existing) = merged.iter_mut().find(|f| f.display_path() == path) {
             existing.rows.extend(file.rows);
             existing.lines_added += file.lines_added;
             existing.lines_removed += file.lines_removed;
@@ -873,8 +871,14 @@ mod tests {
         assert_eq!(parsed.files.len(), 1, "同路径合并为单文件块");
         assert_eq!((parsed.lines_added, parsed.lines_removed), (2, 2));
         let rows = &parsed.files[0].rows;
-        assert!(rows.iter().any(|r| r.kind == DiffRowKind::Added && r.text == "new2"));
-        assert!(rows.iter().any(|r| r.kind == DiffRowKind::Removed && r.text == "old"));
+        assert!(
+            rows.iter()
+                .any(|r| r.kind == DiffRowKind::Added && r.text == "new2")
+        );
+        assert!(
+            rows.iter()
+                .any(|r| r.kind == DiffRowKind::Removed && r.text == "old")
+        );
     }
 
     /// 不同路径保持独立块（合并不误伤）。

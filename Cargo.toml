@@ -5,6 +5,7 @@ members = [
     "apps/updater",
     "apps/winui",
     "crates/qaqh-app-notifications",
+    "crates/qaqh-update",
     "crates/qaqh-fluent",
     "crates/markdown-core",
     "crates/markdown-winui",

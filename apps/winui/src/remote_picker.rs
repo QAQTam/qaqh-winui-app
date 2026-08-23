@@ -60,7 +60,7 @@ fn parent_dir(path: &str) -> String {
     }
     match norm.rfind('/') {
         Some(0) => "/".to_string(),
-        Some(idx) => norm[..idx].to_string(),
+        Some(idx) => norm.get(..idx).unwrap_or("/").to_string(),
         None => "/".to_string(),
     }
 }
@@ -268,7 +268,9 @@ pub fn remote_picker_overlay(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element 
             .grid_row(0),
             // 主体：左目录列表 / 右预览
             grid((
-                border(list_body).background(ThemeRef::LayerFill).grid_column(0),
+                border(list_body)
+                    .background(ThemeRef::LayerFill)
+                    .grid_column(0),
                 border(preview_body)
                     .padding(Thickness::xy(12.0, 8.0))
                     .grid_column(1),

@@ -32,8 +32,7 @@ fn stage_app_assets() {
     // resolves ms-appx:/// content relative to target/<profile> in unpackaged
     // development runs, so keep the same Assets layout used by the release
     // assembler.
-    let out_dir =
-        PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR is always set"));
+    let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR is always set"));
     let profile_dir = out_dir
         .ancestors()
         .nth(3)

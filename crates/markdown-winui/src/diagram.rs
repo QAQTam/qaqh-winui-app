@@ -3,8 +3,9 @@ use std::sync::{Arc, OnceLock};
 use mermaid_rs_renderer::{RenderOptions, Theme, render_with_options};
 use windows_reactor::{
     AccessibilityExt, BackgroundExt, Callback, ColorScheme, Element, HorizontalAlignment, Image,
-    ImageSource, InputExt, KeyExt, LayoutExt, PaddingExt, ScrollBarVisibility, Stretch, ThemeRef,
-    Thickness, TextStyleExt, VerticalAlignment, border, scroll_viewer, text_block, vstack,
+    ImageSource, InputExt, KeyExt, LayoutExt, PaddingExt, ScrollBarVisibility, Stretch,
+    TextStyleExt, ThemeRef, Thickness, VerticalAlignment, border, scroll_viewer, text_block,
+    vstack,
 };
 
 /// 全局字体库：进程内加载系统字体一次（含中文字体），供 usvg 文字轮廓化使用。
@@ -196,8 +197,7 @@ mod tests {
     #[test]
     fn chinese_labels_are_outlined() {
         // 中文字体走 fontdb 系统字体加载；断言转换后无 text 残留。
-        let block =
-            DiagramBlock::render("flowchart LR; A[开始] --> B[完成]");
+        let block = DiagramBlock::render("flowchart LR; A[开始] --> B[完成]");
         assert!(block.error.is_none(), "{:?}", block.error);
         assert!(
             block

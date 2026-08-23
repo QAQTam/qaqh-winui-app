@@ -31,9 +31,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::round_renderer::{
-    AnswerView, ToolCardView, TranscriptChange,
-};
+use crate::round_renderer::{AnswerView, ToolCardView, TranscriptChange};
 use crate::timeline_protocol::{
     TimelineBlock, TimelineBlockKind, TimelineBlockState, TimelineEntry, TimelineEvent,
     TimelineRound, TimelineSnapshot, TimelineToolState, TimelineTurn, TimelineTurnState,
@@ -128,10 +126,7 @@ impl BlockView {
             }
         }
         // 快照中的 text 块直接 final（历史不再流式）。
-        if view.kind == TimelineBlockKind::Text
-            && view.sealed
-            && !view.text.is_empty()
-        {
+        if view.kind == TimelineBlockKind::Text && view.sealed && !view.text.is_empty() {
             view.answer.finalize_text(&view.text);
         }
         view
@@ -143,7 +138,10 @@ impl BlockView {
     /// `TextDelta`/`BlockCheckpoint`）；`Tool`/`Notice` 块不走文本流。
     fn text_delta(&mut self, delta: &str) -> bool {
         if self.sealed
-            || matches!(self.kind, TimelineBlockKind::Tool | TimelineBlockKind::Notice)
+            || matches!(
+                self.kind,
+                TimelineBlockKind::Tool | TimelineBlockKind::Notice
+            )
             || delta.is_empty()
         {
             return false;
@@ -159,7 +157,10 @@ impl BlockView {
     /// BlockCheckpoint 覆盖（自愈：整段替换；幂等防抖）。
     fn text_checkpoint(&mut self, text: &str) -> bool {
         if self.sealed
-            || matches!(self.kind, TimelineBlockKind::Tool | TimelineBlockKind::Notice)
+            || matches!(
+                self.kind,
+                TimelineBlockKind::Tool | TimelineBlockKind::Notice
+            )
             || self.text == text
         {
             return false;
@@ -340,8 +341,7 @@ impl BlockTranscript {
             return 0;
         }
         let n = fresh.len();
-        let mut new_turns: Vec<BlockTurnView> =
-            fresh.into_iter().map(to_turn_view).collect();
+        let mut new_turns: Vec<BlockTurnView> = fresh.into_iter().map(to_turn_view).collect();
         new_turns.append(&mut self.turns);
         self.turns = new_turns;
         self.rebuild_index();
@@ -352,8 +352,7 @@ impl BlockTranscript {
 
     /// 分页前插（快照页入口）：内部展平 turns 后复用 [`Self::prepend_turns`]。
     pub fn prepend_snapshot(&mut self, snapshot: &TimelineSnapshot) -> usize {
-        let turns: Vec<BlockRestoredTurn> =
-            snapshot.turns.iter().map(flatten_turn).collect();
+        let turns: Vec<BlockRestoredTurn> = snapshot.turns.iter().map(flatten_turn).collect();
         self.prepend_turns(turns)
     }
 
@@ -392,8 +391,8 @@ impl BlockTranscript {
             budget -= blocks;
             start_budget = i;
         }
-        self.window_start = start_budget
-            .max(self.turns.len().saturating_sub(BLOCK_WINDOW_DEFAULT_LEN));
+        self.window_start =
+            start_budget.max(self.turns.len().saturating_sub(BLOCK_WINDOW_DEFAULT_LEN));
         self.tail_following = true;
         self.evict_old_turns();
         self.bump_rev();
@@ -432,18 +431,20 @@ impl BlockTranscript {
                 let index = self.ensure_turn(&turn_id);
                 let turn = &mut self.turns[index];
                 // 防御：同 id 已存在则覆盖（writer 单写保证不会发生）。
-                if let Some(existing) = turn.blocks.iter_mut().find(|b| b.block_id == block.block_id)
+                if let Some(existing) = turn
+                    .blocks
+                    .iter_mut()
+                    .find(|b| b.block_id == block.block_id)
                 {
-                    let mut view = BlockView::new(
-                        block,
-                        false,
-                        entry.round_num.unwrap_or(0),
-                    );
+                    let mut view = BlockView::new(block, false, entry.round_num.unwrap_or(0));
                     view.mutation_rev = existing.mutation_rev.wrapping_add(1);
                     *existing = Rc::new(view);
                 } else {
-                    turn.blocks
-                        .push(Rc::new(BlockView::new(block, false, entry.round_num.unwrap_or(0))));
+                    turn.blocks.push(Rc::new(BlockView::new(
+                        block,
+                        false,
+                        entry.round_num.unwrap_or(0),
+                    )));
                 }
                 self.bump_turn(index);
                 TranscriptChange::structural(true)
@@ -742,9 +743,14 @@ mod tests {
     }
 
     fn open_turn(seq: u64, user_text: &str) -> TimelineEntry {
-        entry(seq, "t1", None, TimelineEvent::TurnOpened {
-            user_text: user_text.into(),
-        })
+        entry(
+            seq,
+            "t1",
+            None,
+            TimelineEvent::TurnOpened {
+                user_text: user_text.into(),
+            },
+        )
     }
 
     /// 工具块携带展示平面 diff → 卡片 body 解析为 Diff（turn 末尾「查看详情」
@@ -764,9 +770,13 @@ mod tests {
                     tool_call_id: "c1".into(),
                     name: "edit_file".into(),
                     state: TimelineToolState::Succeeded,
-                    summary: Some("[OK] edit_file\n  src/a.rs: 1/1 op(s) applied at L2 (+1 -1)".into()),
+                    summary: Some(
+                        "[OK] edit_file\n  src/a.rs: 1/1 op(s) applied at L2 (+1 -1)".into(),
+                    ),
                     args_json: Some(r#"{"old_string":"old","new_string":"new"}"#.into()),
-                    output: Some("[OK] edit_file\n  src/a.rs: 1/1 op(s) applied at L2 (+1 -1)".into()),
+                    output: Some(
+                        "[OK] edit_file\n  src/a.rs: 1/1 op(s) applied at L2 (+1 -1)".into(),
+                    ),
                     diff: Some("--- a/src/a.rs\n+++ b/src/a.rs\n@@ -1 +1 @@\n-old\n+new\n".into()),
                     progress: String::new(),
                     failure: None,
@@ -896,11 +906,7 @@ mod tests {
                 delta: "answer".into(),
             },
         ));
-        let kinds: Vec<TimelineBlockKind> = ts.turns()[0]
-            .blocks
-            .iter()
-            .map(|b| b.kind)
-            .collect();
+        let kinds: Vec<TimelineBlockKind> = ts.turns()[0].blocks.iter().map(|b| b.kind).collect();
         assert_eq!(
             kinds,
             vec![
@@ -911,7 +917,10 @@ mod tests {
             "块序 = 到达序（思考-工具-回复交错保序）"
         );
         let tool_block = &ts.turns()[0].blocks[1];
-        assert_eq!(tool_block.tool.as_ref().unwrap().name.as_deref(), Some("exec"));
+        assert_eq!(
+            tool_block.tool.as_ref().unwrap().name.as_deref(),
+            Some("exec")
+        );
     }
 
     /// 工具失败态透传：ToolUpdated state=Failed + failure → ToolCardView

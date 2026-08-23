@@ -185,18 +185,16 @@ pub fn oobe_view(cx: &mut RenderCx, set_visible: SetState<bool>) -> Element {
             .semibold()
             .foreground(ThemeRef::AccentText)
             .into();
-        let title: Element = text_block("QAQ-Harness")
-            .font_size(36.0)
-            .semibold()
-            .into();
+        let title: Element = text_block("QAQ-Harness").font_size(36.0).semibold().into();
         let tagline: Element = text_block("本地优先的 AI 工作台——先连接模型，即可开始对话")
             .font_size(14.0)
             .foreground(ThemeRef::SecondaryText)
             .into();
-        let feat1: Element = text_block("• 一次配置，多端同步（主/子代理/多模态可分别使用不同服务）")
-            .font_size(13.0)
-            .foreground(ThemeRef::SecondaryText)
-            .into();
+        let feat1: Element =
+            text_block("• 一次配置，多端同步（主/子代理/多模态可分别使用不同服务）")
+                .font_size(13.0)
+                .foreground(ThemeRef::SecondaryText)
+                .into();
         let feat2: Element = text_block("• 会话、工具、上下文管理开箱即用")
             .font_size(13.0)
             .foreground(ThemeRef::SecondaryText)
@@ -208,10 +206,7 @@ pub fn oobe_view(cx: &mut RenderCx, set_visible: SetState<bool>) -> Element {
                 move || set_step.call(1)
             })
             .into();
-        let skip_btn: Element = button("跳过")
-            .subtle()
-            .on_click(finish.clone())
-            .into();
+        let skip_btn: Element = button("跳过").subtle().on_click(finish.clone()).into();
         let actions: Element = hstack((start_btn, skip_btn))
             .spacing(tokens::SPACE_3)
             .horizontal_alignment(HorizontalAlignment::Center)
@@ -342,10 +337,11 @@ pub fn oobe_view(cx: &mut RenderCx, set_visible: SetState<bool>) -> Element {
                 }
             })
             .into();
-        let hint: Element = text_block("API Key 仅保存在本机配置中（留空无法完成——可点「跳过」稍后在设置中配置）")
-            .font_size(11.0)
-            .foreground(ThemeRef::SecondaryText)
-            .into();
+        let hint: Element =
+            text_block("API Key 仅保存在本机配置中（留空无法完成——可点「跳过」稍后在设置中配置）")
+                .font_size(11.0)
+                .foreground(ThemeRef::SecondaryText)
+                .into();
         let key_ready = !d.api_key.is_empty();
         let back_btn: Element = button("上一步")
             .subtle()
@@ -359,10 +355,7 @@ pub fn oobe_view(cx: &mut RenderCx, set_visible: SetState<bool>) -> Element {
             .enabled(key_ready)
             .on_click(save_and_finish.clone())
             .into();
-        let skip_btn: Element = button("跳过")
-            .subtle()
-            .on_click(finish.clone())
-            .into();
+        let skip_btn: Element = button("跳过").subtle().on_click(finish.clone()).into();
         let actions: Element = hstack((back_btn, skip_btn, next_btn))
             .spacing(tokens::SPACE_3)
             .horizontal_alignment(HorizontalAlignment::Center)
@@ -371,10 +364,11 @@ pub fn oobe_view(cx: &mut RenderCx, set_visible: SetState<bool>) -> Element {
             .font_size(20.0)
             .semibold()
             .into();
-        let sub_el: Element = text_block("提供方与端点决定协议（Chat Completions / Responses API）")
-            .font_size(12.0)
-            .foreground(ThemeRef::SecondaryText)
-            .into();
+        let sub_el: Element =
+            text_block("提供方与端点决定协议（Chat Completions / Responses API）")
+                .font_size(12.0)
+                .foreground(ThemeRef::SecondaryText)
+                .into();
         vstack((
             title_el,
             sub_el,
@@ -484,14 +478,18 @@ pub fn oobe_view(cx: &mut RenderCx, set_visible: SetState<bool>) -> Element {
     };
 
     // ── 全屏布局：Mica 之上加 LayerFill 背景盖住壳，内容居中 ─────────
-    let dots: Element = hstack((step_dot(step == 0), step_dot(step == 1), step_dot(step == 2)))
-        .spacing(tokens::SPACE_2)
-        .horizontal_alignment(HorizontalAlignment::Center)
-        .into();
-    let card: Element = vstack((dots, Element::Empty, body, feedback))
-    .spacing(tokens::SPACE_3)
-    .max_width(460.0)
+    let dots: Element = hstack((
+        step_dot(step == 0),
+        step_dot(step == 1),
+        step_dot(step == 2),
+    ))
+    .spacing(tokens::SPACE_2)
+    .horizontal_alignment(HorizontalAlignment::Center)
     .into();
+    let card: Element = vstack((dots, Element::Empty, body, feedback))
+        .spacing(tokens::SPACE_3)
+        .max_width(460.0)
+        .into();
     let card: Element = border(card)
         .padding(Thickness::uniform(tokens::SPACE_6))
         .background(ThemeRef::CardBackground)

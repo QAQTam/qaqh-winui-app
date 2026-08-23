@@ -101,8 +101,7 @@ pub mod tokens {
     /// Variable monospaced font for code, numeric telemetry, and raw tool data.
     /// CJK fallback 链：等宽字体不含中文，缺省时中文会落系统默认（雅黑），
     /// 与正文 HarmonyOS 混排观感割裂——显式带回退。
-    pub const CODE_FONT_FAMILY: &str =
-        "ms-appx:///Assets/fonts/CascadiaMono.ttf#Cascadia Mono, Consolas, Microsoft YaHei UI, HarmonyOS Sans SC";
+    pub const CODE_FONT_FAMILY: &str = "ms-appx:///Assets/fonts/CascadiaMono.ttf#Cascadia Mono, Consolas, Microsoft YaHei UI, HarmonyOS Sans SC";
 
     /// Comfortable reading measure for long-form assistant output.
     /// Aligned with [`CONVERSATION_MAX_WIDTH`] so the transcript column and the
@@ -642,4 +641,3 @@ mod tests {
         );
     }
 }
-

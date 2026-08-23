@@ -14,9 +14,7 @@
 ///
 /// 形状已对齐 `qaqh-domain`（serde 零胶水 roundtrip）；转换失败返回
 /// `None`（协议漂移时防御性丢弃，绝不 panic）。
-pub fn timeline_entry(
-    entry: &qaqh_client::TimelineEntry,
-) -> Option<markdown_winui::TimelineEntry> {
+pub fn timeline_entry(entry: &qaqh_client::TimelineEntry) -> Option<markdown_winui::TimelineEntry> {
     serde_json::to_value(entry)
         .ok()
         .and_then(|value| serde_json::from_value(value).ok())

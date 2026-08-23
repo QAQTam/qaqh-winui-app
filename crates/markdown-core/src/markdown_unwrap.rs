@@ -8,7 +8,9 @@
 //!
 //! 在 [`crate::parse::parse_final`] 入口调用（纯文本变换）。
 
-use super::table_detect::{FenceContext, FenceState, is_table_delimiter_line, is_table_header_line};
+use super::table_detect::{
+    FenceContext, FenceState, is_table_delimiter_line, is_table_header_line,
+};
 
 /// 解包含表格的 `` ```markdown `` 围栏，返回变换后的文本。
 ///
@@ -75,7 +77,10 @@ mod tests {
         let src = "前文\n\n```markdown\n| A | B |\n|---|---|\n| 1 | 2 |\n```\n\n后文\n";
         let out = unwrap_markdown_fence_tables(src);
         assert!(!out.contains("```"), "围栏行被剥掉: {out}");
-        assert!(out.contains("| A | B |\n|---|---|\n| 1 | 2 |\n"), "表格内容保留");
+        assert!(
+            out.contains("| A | B |\n|---|---|\n| 1 | 2 |\n"),
+            "表格内容保留"
+        );
         assert!(out.contains("前文") && out.contains("后文"));
     }
 
@@ -116,6 +121,9 @@ mod tests {
         let out = unwrap_markdown_fence_tables(src);
         assert!(out.contains("| a |\n|---|"), "表格围栏已解包");
         assert!(out.contains("```rust"), "rust 围栏保留");
-        assert!(out.contains("```markdown\n# 无表格\n```"), "无表格 markdown 围栏保留");
+        assert!(
+            out.contains("```markdown\n# 无表格\n```"),
+            "无表格 markdown 围栏保留"
+        );
     }
 }

@@ -28,7 +28,9 @@
 //! UI 端共用 `table_view` 网格通道。
 
 use super::live_table::{TableHiddenSpan, TableSnapshot};
-use super::table_detect::{FenceContext, FenceState, is_table_delimiter_line, parse_table_segments};
+use super::table_detect::{
+    FenceContext, FenceState, is_table_delimiter_line, parse_table_segments,
+};
 
 /// 解析状态。
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -273,7 +275,10 @@ impl GfmTableTracker {
                 start: block_start,
                 end,
             },
-            TableSnapshot { headers: header, rows },
+            TableSnapshot {
+                headers: header,
+                rows,
+            },
         ));
     }
 }
@@ -502,7 +507,10 @@ mod tests {
         // 隐藏区间覆盖表头 → 末数据行（围栏行不隐藏）
         let (h, _) = &t.tables_with_spans()[0];
         assert_eq!(h.start, "```markdown\n".len());
-        assert_eq!(h.end, "```markdown\n| A | B |\n|---|---|\n| 1 | 2 |\n".len());
+        assert_eq!(
+            h.end,
+            "```markdown\n| A | B |\n|---|---|\n| 1 | 2 |\n".len()
+        );
     }
 
     /// 其他围栏（rust/sh/无 info）内：管道是代码，不参与表格
@@ -524,7 +532,11 @@ mod tests {
         t.feed("| A |\n|---|\n| 1 |\n```sh\n");
         let spans = t.tables_with_spans();
         assert_eq!(spans.len(), 1);
-        assert_eq!(spans[0].0.end, "| A |\n|---|\n| 1 |\n".len(), "围栏行不隐藏");
+        assert_eq!(
+            spans[0].0.end,
+            "| A |\n|---|\n| 1 |\n".len(),
+            "围栏行不隐藏"
+        );
         // markdown 围栏闭合 → 封存
         let mut t2 = GfmTableTracker::new();
         t2.feed("```markdown\n| A |\n|---|\n| 1 |\n```\n");

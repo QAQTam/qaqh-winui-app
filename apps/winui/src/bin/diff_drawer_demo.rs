@@ -11,7 +11,7 @@
 //! - 弹层 = 主窗口 70%（保持纵横比），内容：文件列表 + 单列 diff + 底部合计
 //! - 关闭：✕ / Esc（KeyboardAccelerator）
 
-use markdown_winui::{parse_unified_diff, diff_file_view};
+use markdown_winui::{diff_file_view, parse_unified_diff};
 use windows_reactor::*;
 
 /// 演示数据：file_edit.rs 两个 hunk（同文件多 op → 合并验证）。
@@ -101,27 +101,30 @@ fn render_app(cx: &mut RenderCx) -> Element {
             text_block("主题：")
                 .font_size(11.0)
                 .foreground(ThemeRef::SecondaryText),
-            button(if dark { "☀️ 亮色" } else { "🌙 暗色" })
-                .on_click({
-                    let set_dark = set_dark.clone();
-                    move || {
-                        let next = !dark;
-                        set_dark.call(next);
-                        set_requested_theme(if next {
-                            RequestedTheme::Dark
-                        } else {
-                            RequestedTheme::Light
-                        });
-                    }
-                }),
+            button(if dark { "☀️ 亮色" } else { "🌙 暗色" }).on_click({
+                let set_dark = set_dark.clone();
+                move || {
+                    let next = !dark;
+                    set_dark.call(next);
+                    set_requested_theme(if next {
+                        RequestedTheme::Dark
+                    } else {
+                        RequestedTheme::Light
+                    });
+                }
+            }),
         ))
         .spacing(8.0),
         // 模拟 turn 视图：工具胶囊行
         border(
             hstack((
-                text_block("✓").font_size(12.0).foreground(ThemeRef::SystemSuccess),
+                text_block("✓")
+                    .font_size(12.0)
+                    .foreground(ThemeRef::SystemSuccess),
                 text_block("修改文件 · src/file_edit.rs").font_size(12.0),
-                text_block("+8  −5").font_size(12.0).foreground(ThemeRef::SystemSuccess),
+                text_block("+8  −5")
+                    .font_size(12.0)
+                    .foreground(ThemeRef::SystemSuccess),
             ))
             .spacing(8.0)
             .padding(Thickness::xy(8.0, 5.0)),

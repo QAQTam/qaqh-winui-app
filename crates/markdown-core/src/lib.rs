@@ -29,4 +29,6 @@ pub use live::parse_live;
 pub use live_table::{LiveTableTracker, TableHiddenSpan, TableSnapshot};
 pub use math::{MathSpan, scan_math};
 pub use parse::parse_final;
-pub use table_layout::{ColumnKind, ColumnMetrics, collect_column_metrics, compute_column_widths, display_width};
+pub use table_layout::{
+    ColumnKind, ColumnMetrics, collect_column_metrics, compute_column_widths, display_width,
+};

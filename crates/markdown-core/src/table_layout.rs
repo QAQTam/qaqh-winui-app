@@ -273,10 +273,7 @@ mod tests {
         vec![Inline::Text(s.to_string())]
     }
 
-    fn table(
-        headers: &[&str],
-        rows: &[&[&str]],
-    ) -> (Vec<Vec<Inline>>, Vec<Vec<Vec<Inline>>>) {
+    fn table(headers: &[&str], rows: &[&[&str]]) -> (Vec<Vec<Inline>>, Vec<Vec<Vec<Inline>>>) {
         let h = headers.iter().map(|h| cell(h)).collect();
         let r = rows
             .iter()
@@ -332,7 +329,12 @@ mod tests {
         );
         let m = collect_column_metrics(&h, &r, 2);
         let w = compute_column_widths(&m, Some(30)).expect("widths");
-        assert!(w[0] < m[0].max_width, "TokenHeavy 让宽: {} < {}", w[0], m[0].max_width);
+        assert!(
+            w[0] < m[0].max_width,
+            "TokenHeavy 让宽: {} < {}",
+            w[0],
+            m[0].max_width
+        );
         // Compact 列保持地板（token 宽 "进行中" = 6 字符）
         assert_eq!(w[1], 6, "Compact 列不被压缩");
         assert!(w.iter().sum::<usize>() <= 30);
@@ -343,7 +345,10 @@ mod tests {
     fn too_narrow_returns_none() {
         let (h, r) = table(&["A", "B"], &[&["1", "2"]]);
         let m = collect_column_metrics(&h, &r, 2);
-        assert!(compute_column_widths(&m, Some(5)).is_none(), "2 列需 ≥6 字符");
+        assert!(
+            compute_column_widths(&m, Some(5)).is_none(),
+            "2 列需 ≥6 字符"
+        );
     }
 
     /// 软地板：Narrative/TokenHeavy 地板 16
@@ -359,7 +364,10 @@ mod tests {
     fn balanced_shrink_within_kind() {
         let (h, r) = table(
             &["x", "y"],
-            &[&["crates/markdown-winui/src/lib.rs", "crates/qaqh-winui/src/main.rs"]],
+            &[&[
+                "crates/markdown-winui/src/lib.rs",
+                "crates/qaqh-winui/src/main.rs",
+            ]],
         );
         let m = collect_column_metrics(&h, &r, 2);
         let w = compute_column_widths(&m, Some(30)).expect("widths");

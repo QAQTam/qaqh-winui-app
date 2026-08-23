@@ -427,7 +427,9 @@ impl super::BridgeCore {
                 // Home 无活动会话时，会话级 workspace.set 无法执行（需 seed/lease），
                 // 但组织级已在 header::on_workspace 中经 spawn_workspace_create
                 // 完成选中，左侧筛选与顶部显示已由 refresh_header 派生，无需报错。
-                log_diag("workspace.set: no active session, skipped (org workspace already selected)");
+                log_diag(
+                    "workspace.set: no active session, skipped (org workspace already selected)",
+                );
                 // 不写 workspace_error，避免顶部闪红；组织路径已在 refresh_header 展示
                 return;
             }

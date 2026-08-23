@@ -1,0 +1,4 @@
+# 工具链口径与 QAQ-Harness 后端 CI 对齐（stable 1.98 双侧一致）。
+# 固定 minor 版本：patch 更新自动跟进，避免双侧漂移触发 fmt/clippy 口径分歧。
+[toolchain]
+channel = "1.98"

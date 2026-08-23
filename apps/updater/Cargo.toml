@@ -10,7 +10,7 @@ name = "qaqh-updater"
 path = "src/main.rs"
 
 [dependencies]
-qaqh-update = { path = "../../../QAQ-Harness/crates/qaqh-update" }
+qaqh-update = { path = "../../crates/qaqh-update" }
 qaqh-types = { path = "../../../QAQ-Harness/crates/qaqh-types" }
 dirs = "6"
 eframe = "0.29"

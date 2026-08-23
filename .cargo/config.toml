@@ -9,4 +9,4 @@
 #   tar -xf pkg.nupkg -C <tmp> && 拷贝 metadata/**/*.winmd 到 .tools/winmd/
 
 [env]
-QAQH_WINMD_DIR = "D:/project/qaqh-winui-app/.tools/winmd"
+QAQH_WINMD_DIR = "G:/qaqh-winui-app/.tools/winmd"

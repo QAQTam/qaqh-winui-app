@@ -6,8 +6,8 @@
 //! 运行：cargo run -p qaqh-app-notifications --example spike
 
 use qaqh_app_notifications::*;
+use windows::Win32::ro::{RO_INIT_SINGLETHREADED, RoInitialize};
 use windows::core::Result;
-use windows::Win32::ro::{RoInitialize, RO_INIT_SINGLETHREADED};
 use windows_core::HSTRING;
 
 fn main() -> Result<()> {

@@ -85,7 +85,11 @@ pub fn uninstall_worker(
     let result = uninstall(target, delete_user_data);
     if notify {
         match &result {
-            Ok(()) => show_message("QAQ-Harness 卸载", "QAQ-Harness 已从此计算机中移除。", false),
+            Ok(()) => show_message(
+                "QAQ-Harness 卸载",
+                "QAQ-Harness 已从此计算机中移除。",
+                false,
+            ),
             Err(error) => show_message("QAQ-Harness 卸载失败", &error.to_string(), true),
         }
     }
@@ -289,7 +293,14 @@ fn windows_path_key(path: &Path) -> String {
             .map(str::to_owned)
             .unwrap_or(value)
     };
-    value.trim_end_matches('\\').to_ascii_lowercase()
+    let lowered = value.trim_end_matches('\\').to_ascii_lowercase();
+    // 品牌迁移别名：末段目录 `qaqh`（旧产品名）与 `qAQ-Harness`（现品牌，
+    // 见 installer 默认安装路径）视为同一根，保证升级/卸载识别旧安装。
+    match lowered.rsplit_once('\\') {
+        Some((parent, "qaq-harness")) => format!("{parent}\\qaqh"),
+        None if lowered == "qaq-harness" => "qaqh".to_owned(),
+        _ => lowered,
+    }
 }
 
 fn stop_running_processes(target: &Path) -> Result<(), AnyError> {
@@ -447,6 +458,19 @@ fn wait_for_pid(pid: u32, timeout: Duration) -> Result<(), AnyError> {
     Err(format!("timed out waiting for maintenance process {pid}").into())
 }
 
+/// 从 discovery `endpoint` 提取 host:port（authority）。
+///
+/// 前缀无关：daemon 曾用遗留 WS 形式 `ws://host:port/control/v1`，现已迁移为
+/// 纯 HTTP 形式 `http://host:port`；裸 `host:port` 亦兼容。仅取 authority，
+/// 路径后缀一律忽略。
+fn endpoint_authority(endpoint: &str) -> &str {
+    let without_scheme = match endpoint.split_once("://") {
+        Some((_, rest)) => rest,
+        None => endpoint,
+    };
+    without_scheme.split('/').next().unwrap_or_default()
+}
+
 fn stop_daemon_via_http() {
     let Some(home) = dirs::home_dir() else {
         return;
@@ -463,11 +487,7 @@ fn stop_daemon_via_http() {
     let Some(token) = discovery.get("token").and_then(|value| value.as_str()) else {
         return;
     };
-    let address = endpoint
-        .trim_start_matches("ws://")
-        .split('/')
-        .next()
-        .unwrap_or_default();
+    let address = endpoint_authority(endpoint);
     let Ok(socket_address) = address.parse::<std::net::SocketAddr>() else {
         return;
     };
@@ -671,8 +691,8 @@ fn wide(value: &str) -> Vec<u16> {
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_UNINSTALL_BYTES, audit_deletion_tree, path_is_within, reject_dangerous_root,
-        windows_path_key,
+        MAX_UNINSTALL_BYTES, audit_deletion_tree, endpoint_authority, path_is_within,
+        reject_dangerous_root, windows_path_key,
     };
     use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -721,5 +741,21 @@ mod tests {
         assert!(audit_deletion_tree(&root).is_err());
         std::fs::remove_file(oversized).expect("remove sparse file");
         std::fs::remove_dir(root).expect("remove audit root");
+    }
+
+    #[test]
+    fn daemon_endpoint_authority_is_prefix_independent() {
+        // 遗留 WS 数据协议形式（含 /control/v1 后缀）
+        assert_eq!(
+            endpoint_authority("ws://127.0.0.1:8787/control/v1"),
+            "127.0.0.1:8787"
+        );
+        // 新 HTTP 形式（M3 拆除 WS 后的目标格式）
+        assert_eq!(
+            endpoint_authority("http://127.0.0.1:8787"),
+            "127.0.0.1:8787"
+        );
+        // 裸 authority 兜底
+        assert_eq!(endpoint_authority("127.0.0.1:8787"), "127.0.0.1:8787");
     }
 }

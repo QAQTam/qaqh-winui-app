@@ -18,8 +18,8 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use qaqh_client::{TimelineBlockKind, TimelineTurn};
 use markdown_winui::{DiffFile, diff_file_view};
+use qaqh_client::{TimelineBlockKind, TimelineTurn};
 use windows_reactor::*;
 
 use crate::bridge::Bridge;
@@ -35,10 +35,7 @@ pub enum DrawerRequest {
     },
     /// 子代理运行记录：`seed` = 子代理 Ringing seed（timeline 数据源），
     /// `name` = 子代理名（头部显示）。
-    Subagent {
-        seed: String,
-        name: String,
-    },
+    Subagent { seed: String, name: String },
 }
 
 /// 单文件条目：路径 + 统计 + 状态 + 已解析 diff（渲染用）。
@@ -145,7 +142,8 @@ pub fn diff_drawer_overlay(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
                         let active_sub_seed = active_sub_seed.clone();
                         move || {
                             // 只消费目标子代理的快照（seed 匹配防串台）。
-                            if let Some((cached_seed, snap)) = bridge.core().subagent_timeline_peek()
+                            if let Some((cached_seed, snap)) =
+                                bridge.core().subagent_timeline_peek()
                                 && active_sub_seed.borrow().as_deref() == Some(cached_seed.as_str())
                             {
                                 set_sub_turns.call(snap.turns.clone());
@@ -236,14 +234,10 @@ pub fn diff_drawer_overlay(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
         .into(),
     };
 
-    let esc = KeyboardAccelerator::new(
-        VirtualKey::Escape,
-        VirtualKeyModifiers::None,
-        {
-            let on_close = on_close.clone();
-            move || on_close.invoke(())
-        },
-    );
+    let esc = KeyboardAccelerator::new(VirtualKey::Escape, VirtualKeyModifiers::None, {
+        let on_close = on_close.clone();
+        move || on_close.invoke(())
+    });
     let card: Element = border(content)
         .background(ThemeRef::SolidBackground)
         .border_brush(ThemeRef::CardStroke)
@@ -498,7 +492,10 @@ fn subagent_content(props: &SubagentContentProps, _cx: &mut RenderCx) -> Element
                             .wrap()
                             .foreground(fg)
                             .padding(Thickness::xy(4.0, 2.0))
-                            .with_key(format!("subagent-block-{}-{}", turn.turn_id, block.block_id))
+                            .with_key(format!(
+                                "subagent-block-{}-{}",
+                                turn.turn_id, block.block_id
+                            ))
                             .into(),
                     );
                 }
@@ -517,7 +514,9 @@ fn subagent_content(props: &SubagentContentProps, _cx: &mut RenderCx) -> Element
 
     grid((
         hstack((
-            text_block(format!("子代理 · {}", props.name)).font_size(14.0).semibold(),
+            text_block(format!("子代理 · {}", props.name))
+                .font_size(14.0)
+                .semibold(),
             text_block(format!("{status} · {}", props.seed))
                 .font_size(12.0)
                 .foreground(ThemeRef::SecondaryText),
@@ -528,9 +527,11 @@ fn subagent_content(props: &SubagentContentProps, _cx: &mut RenderCx) -> Element
         .spacing(12.0)
         .padding(Thickness::xy(16.0, 12.0))
         .grid_row(0),
-        border(scroll_viewer(vstack(rows).spacing(2.0).padding(Thickness::xy(12.0, 8.0))))
-            .background(ThemeRef::LayerFill)
-            .grid_row(1),
+        border(scroll_viewer(
+            vstack(rows).spacing(2.0).padding(Thickness::xy(12.0, 8.0)),
+        ))
+        .background(ThemeRef::LayerFill)
+        .grid_row(1),
     ))
     .rows([GridLength::Auto, GridLength::STAR])
     .width(props.drawer_w)

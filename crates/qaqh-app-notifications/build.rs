@@ -17,7 +17,9 @@ fn main() {
         .map(PathBuf::from)
         .unwrap_or_else(|_| find_runtime_winmd_dir());
     assert!(
-        winmd_dir.join("Microsoft.Windows.AppNotifications.winmd").exists(),
+        winmd_dir
+            .join("Microsoft.Windows.AppNotifications.winmd")
+            .exists(),
         "qaqh-app-notifications: {winmd_dir:?} lacks Microsoft.Windows.AppNotifications.winmd"
     );
 
@@ -61,7 +63,10 @@ fn find_runtime_winmd_dir() -> PathBuf {
         .unwrap_or_default();
     candidates.sort();
     for dir in candidates.iter().rev() {
-        if dir.join("Microsoft.Windows.AppNotifications.winmd").exists() {
+        if dir
+            .join("Microsoft.Windows.AppNotifications.winmd")
+            .exists()
+        {
             return dir.clone();
         }
     }

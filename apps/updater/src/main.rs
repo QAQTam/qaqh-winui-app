@@ -249,9 +249,11 @@ impl eframe::App for MaintenanceApp {
                     );
                     ui.add_space(4.0);
                     ui.label(
-                        egui::RichText::new("选择 QAQ-Harness Installer 生成的本地 update-source 目录。")
-                            .size(12.0)
-                            .color(colors::TEXT_SECONDARY),
+                        egui::RichText::new(
+                            "选择 QAQ-Harness Installer 生成的本地 update-source 目录。",
+                        )
+                        .size(12.0)
+                        .color(colors::TEXT_SECONDARY),
                     );
                     ui.add_space(10.0);
                     ui.add(
@@ -276,7 +278,9 @@ impl eframe::App for MaintenanceApp {
                             "请先输入 update-source 目录。".to_string()
                         } else {
                             match stage(self.source.trim(), &target) {
-                                Ok(()) => "更新已暂存；启动或重启 QAQ-Harness 后完成应用。".to_string(),
+                                Ok(()) => {
+                                    "更新已暂存；启动或重启 QAQ-Harness 后完成应用。".to_string()
+                                }
                                 Err(error) => format!("更新暂存失败：{error}"),
                             }
                         };
@@ -329,7 +333,8 @@ impl eframe::App for MaintenanceApp {
                             if ui
                                 .add(
                                     egui::Button::new(
-                                        egui::RichText::new("卸载 QAQ-Harness").color(colors::DANGER),
+                                        egui::RichText::new("卸载 QAQ-Harness")
+                                            .color(colors::DANGER),
                                     )
                                     .fill(egui::Color32::WHITE)
                                     .stroke(egui::Stroke::new(1.0_f32, colors::DANGER))
@@ -896,7 +901,9 @@ mod tests {
 
         assert_eq!(
             options.install_dir,
-            Some(PathBuf::from("C:/Users/Test/AppData/Local/Programs/QAQ-Harness"))
+            Some(PathBuf::from(
+                "C:/Users/Test/AppData/Local/Programs/QAQ-Harness"
+            ))
         );
         assert!(options.notify);
         assert!(options.delete_user_data);

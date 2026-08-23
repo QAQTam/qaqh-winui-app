@@ -81,19 +81,17 @@ impl super::BridgeCore {
                     return;
                 }
             };
-            let created_id: Option<String> = match client
-                .action(ActionRequest::WorkspaceCreate { path })
-                .await
-            {
-                Ok(v) => {
-                    log_diag("workspace_create: ok");
-                    v.get("id").and_then(|x| x.as_str()).map(|s| s.to_string())
-                }
-                Err(err) => {
-                    log_diag(&format!("workspace_create failed: {err}"));
-                    None
-                }
-            };
+            let created_id: Option<String> =
+                match client.action(ActionRequest::WorkspaceCreate { path }).await {
+                    Ok(v) => {
+                        log_diag("workspace_create: ok");
+                        v.get("id").and_then(|x| x.as_str()).map(|s| s.to_string())
+                    }
+                    Err(err) => {
+                        log_diag(&format!("workspace_create failed: {err}"));
+                        None
+                    }
+                };
             core.refresh_workspaces_inner().await;
             core.refresh_sessions_inner().await;
             // 自动选中：去重场景后端直接返回已存在项的 id，前端亦选中
@@ -109,7 +107,11 @@ impl super::BridgeCore {
                     .unwrap_or_else(|e| e.into_inner())
                     .iter()
                     .find(|w| {
-                        w.path.replace('/', "\\").to_ascii_lowercase().trim_end_matches('\\') == norm
+                        w.path
+                            .replace('/', "\\")
+                            .to_ascii_lowercase()
+                            .trim_end_matches('\\')
+                            == norm
                     })
                     .map(|w| w.id.clone());
                 if let Some(id) = found {

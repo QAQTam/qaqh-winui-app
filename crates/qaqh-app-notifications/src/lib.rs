@@ -101,7 +101,9 @@ impl Notifier {
     }
 }
 
-fn try_init(on_invoked: std::sync::Arc<dyn Fn(Option<String>) + Send + Sync + 'static>) -> InitOutcome {
+fn try_init(
+    on_invoked: std::sync::Arc<dyn Fn(Option<String>) + Send + Sync + 'static>,
+) -> InitOutcome {
     let mgr = match AppNotificationManager::Default() {
         Ok(m) => m,
         Err(e) => return InitOutcome::Failed(format!("Default: {e:?}")),

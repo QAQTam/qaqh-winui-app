@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use windows_reactor::*;
 
-use crate::bridge::{log_diag, Bridge, HeaderFlag, HeaderState};
+use crate::bridge::{Bridge, HeaderFlag, HeaderState, log_diag};
 
 /// 标题栏高度（PLAN-NATIVE-UI.md 布局：row 0 = 48px）。
 pub const HEADER_HEIGHT: f64 = 48.0;
@@ -227,13 +227,17 @@ pub fn header(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
             .with_key("header-workspace-error")
             .into()
     } else if state.workspace.is_empty() {
-        text_block(if en { "No workspace" } else { "未选择工作区" })
-            .font_size(11.0)
-            .foreground(ThemeRef::TertiaryText)
-            .vertical_alignment(VerticalAlignment::Center)
-            .automation_name("工作区路径（空）")
-            .with_key("header-workspace-path-empty")
-            .into()
+        text_block(if en {
+            "No workspace"
+        } else {
+            "未选择工作区"
+        })
+        .font_size(11.0)
+        .foreground(ThemeRef::TertiaryText)
+        .vertical_alignment(VerticalAlignment::Center)
+        .automation_name("工作区路径（空）")
+        .with_key("header-workspace-path-empty")
+        .into()
     } else {
         text_block(&state.workspace)
             .font_size(11.0)

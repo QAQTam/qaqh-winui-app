@@ -133,15 +133,19 @@ const SLASH_COMMANDS: &[(&str, &str, &str)] = &[
 
 /// 匹配候选（对齐 Web `matchSlashCommands`：仅 "/" 开头时返回）。
 fn match_slash_commands(value: &str) -> Vec<(String, String, String)> {
-    if !value.starts_with('/') {
+    let Some(rest) = value.strip_prefix('/') else {
         return Vec::new();
-    }
-    let query = value[1..].trim().to_lowercase();
+    };
+    let query = rest.trim().to_lowercase();
     SLASH_COMMANDS
         .iter()
         .filter(|(cmd, label, _)| {
             query.is_empty()
-                || cmd[1..].to_lowercase().contains(&query)
+                || cmd
+                    .strip_prefix('/')
+                    .unwrap_or(cmd)
+                    .to_lowercase()
+                    .contains(&query)
                 || label.to_lowercase().contains(&query)
         })
         .map(|(c, l, d)| (c.to_string(), l.to_string(), d.to_string()))

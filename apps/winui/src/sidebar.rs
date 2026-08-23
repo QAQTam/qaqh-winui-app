@@ -608,10 +608,8 @@ pub fn sidebar(
                 move || set_ws_rename.call(None)
             });
             let card: Element = {
-                let title_el: Element = text_block("重命名工作区")
-                    .semibold()
-                    .font_size(14.0)
-                    .into();
+                let title_el: Element =
+                    text_block("重命名工作区").semibold().font_size(14.0).into();
                 let buttons: Element = hstack((cancel, confirm))
                     .spacing(8.0)
                     .horizontal_alignment(HorizontalAlignment::Right)

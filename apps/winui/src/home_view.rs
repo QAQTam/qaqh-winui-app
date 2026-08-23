@@ -164,7 +164,8 @@ pub fn home_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
     // 未配置主 API Key 提示横幅（settings 快照 rev 驱动）。
     let (need_key, set_need_key) = cx.use_state::<bool>(false);
     // 启动页工作区选择（左侧已简化为导航，此处为新建归属唯一入口）
-    let (workspaces, set_workspaces) = cx.use_state::<Vec<crate::shell_store::WorkspaceItem>>(Vec::new());
+    let (workspaces, set_workspaces) =
+        cx.use_state::<Vec<crate::shell_store::WorkspaceItem>>(Vec::new());
     let (current_ws, set_current_ws) = cx.use_state::<Option<String>>(None);
     let timer = cx.use_ref::<Option<DispatcherTimer>>(None);
     let last_rev = cx.use_ref::<u64>(0);
@@ -292,7 +293,12 @@ pub fn home_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
         let combo: Element = qaqh_fluent::solid_combo_box(combo_strings)
             .selected_index(
                 cur.as_deref()
-                    .and_then(|id| ws_items.iter().position(|w| w.id == id).map(|i| i as i32 + 1))
+                    .and_then(|id| {
+                        ws_items
+                            .iter()
+                            .position(|w| w.id == id)
+                            .map(|i| i as i32 + 1)
+                    })
                     .unwrap_or(0),
             )
             .on_selection_changed({
@@ -473,12 +479,10 @@ pub fn home_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
                 text_block("尚未配置 API Key，配置后即可开始对话")
                     .font_size(13.0)
                     .foreground(ThemeRef::SecondaryText),
-                button("去设置")
-                    .subtle()
-                    .on_click({
-                        let bridge = bridge.clone();
-                        move || bridge.navigate("settings", None)
-                    }),
+                button("去设置").subtle().on_click({
+                    let bridge = bridge.clone();
+                    move || bridge.navigate("settings", None)
+                }),
             ))
             .spacing(12.0)
             .horizontal_alignment(HorizontalAlignment::Stretch),

@@ -19,7 +19,8 @@ crates/
 ├── markdown-core             # ChatView markdown 渲染核心（final 解析 + 流式 live 语义）
 ├── markdown-winui            # AST → reactor 富文本模型对接（RichTextBlock）
 ├── qaqh-fluent               # Windows 11 Fluent 视觉原语 / 动效（motion）
-└── qaqh-app-notifications    # Microsoft.Windows.AppNotifications WinMD 绑定
+├── qaqh-app-notifications    # Microsoft.Windows.AppNotifications WinMD 绑定
+└── qaqh-update               # 更新协议引擎（catalog/planner/state；自后端三刀重构迁入）
 
 scripts/                       # dev-downstream.ps1 / sync-version.ps1
 justfile                       # 构建 / 打包 / 发布 / 检查 全流程入口

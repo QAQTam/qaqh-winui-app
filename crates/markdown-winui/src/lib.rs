@@ -36,15 +36,15 @@ pub use block_transcript::{
 pub use diagram::{DiagramBlock, diagram_view};
 pub use highlight::highlighted_code_block;
 pub use protocol::{ConversationEvent, ProviderToolState, RoundDeltaKind};
-pub use timeline_protocol::{
-    TimelineBlock, TimelineBlockKind, TimelineBlockState, TimelineEntry, TimelineEvent,
-    TimelineFailure, TimelineRound, TimelineSnapshot, TimelineTool, TimelineToolPermission,
-    TimelineToolState, TimelineTurn, TimelineTurnState,
-};
 pub use round_renderer::{
     AnswerView, LiveSegment, PendingOutput, RESTORE_KEEP_TURNS, RestoredRound, RestoredTurn,
     RoundView, ToolCardView, Transcript, TranscriptChange, TranscriptInvalidation, TurnStatus,
     TurnView,
+};
+pub use timeline_protocol::{
+    TimelineBlock, TimelineBlockKind, TimelineBlockState, TimelineEntry, TimelineEvent,
+    TimelineFailure, TimelineRound, TimelineSnapshot, TimelineTool, TimelineToolPermission,
+    TimelineToolState, TimelineTurn, TimelineTurnState,
 };
 pub use tool_content::{
     ChangeStats, CodeDocument, DiffDocument, DiffFile, DiffRow, DiffRowKind, ToolBody,
@@ -56,7 +56,7 @@ use markdown_core::ast::{Block, Inline};
 use windows_reactor::{
     BackgroundExt, Element, GridChildExt, GridLength, InputExt, KeyExt, PaddingExt,
     PointerEventInfo, RenderCx, RichTextBlock, RichTextHyperlink, RichTextInline,
-    RichTextParagraph, RichTextRun, TextStyleExt, TextAlignment, Updater, border, grid, text_block,
+    RichTextParagraph, RichTextRun, TextAlignment, TextStyleExt, Updater, border, grid, text_block,
 };
 
 /// 一段 markdown 的富文本渲染产物：
@@ -275,8 +275,9 @@ pub fn inlines_to_rich(inlines: &[Inline]) -> Vec<RichTextInline> {
                 // 中文会落系统默认雅黑，与正文 HarmonyOS 混排割裂——与
                 // 代码块 CODE_FONT_FAMILY 同链，此处用系统字体名免资源依赖）。
                 let mut run = RichTextRun::plain(c);
-                run.font_family =
-                    Some("Cascadia Mono, Consolas, Microsoft YaHei UI, HarmonyOS Sans SC".to_string());
+                run.font_family = Some(
+                    "Cascadia Mono, Consolas, Microsoft YaHei UI, HarmonyOS Sans SC".to_string(),
+                );
                 push_run(&mut out, run);
             }
             Inline::Link { text, url } => out.push(RichTextInline::Hyperlink(RichTextHyperlink {
@@ -627,10 +628,7 @@ mod tests {
             panic!("expect star columns, got {:?}", g.columns);
         };
         // 长内容列（col1）权重 > 短内容列（col0）
-        assert!(
-            *w1 > *w0,
-            "长内容列权重应更大: col0={w0} vs col1={w1}"
-        );
+        assert!(*w1 > *w0, "长内容列权重应更大: col0={w0} vs col1={w1}");
         // 权重不小于 1（空内容列保底）
         assert!(*w0 >= 1.0 && *w1 >= 1.0);
     }
@@ -711,19 +709,13 @@ pub fn table_view(table: &TableData, key: &str, hover: Option<&TableHover>) -> E
     // 权重（ASCII=1/CJK=2）即真实渲染 px 的比例，长内容列份额大属正常。
     // 压缩能力已就位（compute_column_widths 的 available_width），后续
     // 接入视口宽度时启用优先级压缩（TokenHeavy 先让 / Compact 保底）。
-    let metrics = markdown_core::table_layout::collect_column_metrics(
-        &table.headers,
-        &table.rows,
-        n_cols,
-    );
+    let metrics =
+        markdown_core::table_layout::collect_column_metrics(&table.headers, &table.rows, n_cols);
     let widths = markdown_core::table_layout::compute_column_widths(&metrics, None)
         .unwrap_or_else(|| vec![3; n_cols]);
     // 列宽 = 内容比例（Star 铺满，无右侧空白）。数字列不做权重上浮
     // （曾尝试 ×1.5/×2.0，带单位识别生效后数字列被撑到右侧列，回退）。
-    let cols: Vec<GridLength> = widths
-        .iter()
-        .map(|w| GridLength::Star(*w as f64))
-        .collect();
+    let cols: Vec<GridLength> = widths.iter().map(|w| GridLength::Star(*w as f64)).collect();
 
     let mut children: Vec<Element> = Vec::new();
 

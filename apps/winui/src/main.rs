@@ -497,12 +497,14 @@ fn app(cx: &mut RenderCx) -> Element {
     let interaction: Element = component(interaction_component, ()).with_key("shell-interaction");
     // 图表放大覆盖层（P-6 同模式）：chat_view 点击写入 DIAGRAM_ZOOM，
     // 本组件轮询弹开全窗大图。无请求时空 grid 穿透。
-    let diagram_zoom: Element = component(diagram_zoom_component, ()).with_key("shell-diagram-zoom");
+    let diagram_zoom: Element =
+        component(diagram_zoom_component, ()).with_key("shell-diagram-zoom");
     // diff 抽屉覆盖层（V4）：turn 末尾「查看详情」→ 右侧滑入面板。
     // 无请求时空 grid 穿透（同 interaction 模式）。
     let diff_drawer: Element = component(diff_drawer_component, ()).with_key("shell-diff-drawer");
     // 远端文件选择器覆盖层（临时跨端模式）：header 工作区按钮在远端模式下打开。
-    let remote_picker: Element = component(remote_picker_component, ()).with_key("shell-remote-picker");
+    let remote_picker: Element =
+        component(remote_picker_component, ()).with_key("shell-remote-picker");
     // 首次启动引导（P-6 同模式）：无完成标志时盖住整个壳（含 titlebar，
     // 内部自带全屏 LayerFill 背景）；完成/跳过写标志后组件卸载，空 grid
     // 穿透（同 splash 注释：切勿给空 grid 添加背景）。
@@ -518,10 +520,18 @@ fn app(cx: &mut RenderCx) -> Element {
     // diagram_zoom / diff_drawer **之后**——否则 diff 面板/图表放大打开时其
     // 全屏遮罩会盖住 ask 面板（「ask 弹不出来」根因，2026-08-12 实测定位）。
     // 模态互斥时 agent 交互优先：即使 diff 面板开着，ask 也应弹在最上层。
-    grid((base, splash, diagram_zoom, diff_drawer, remote_picker, interaction, oobe))
-        .rows([GridLength::STAR])
-        .columns([GridLength::STAR])
-        .into()
+    grid((
+        base,
+        splash,
+        diagram_zoom,
+        diff_drawer,
+        remote_picker,
+        interaction,
+        oobe,
+    ))
+    .rows([GridLength::STAR])
+    .columns([GridLength::STAR])
+    .into()
 }
 
 /// Minimal file logger for headless diagnosis (GUI subsystem has no console).

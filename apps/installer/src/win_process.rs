@@ -52,10 +52,7 @@ fn find_via_toolhelp() -> Option<Vec<ProcInfo>> {
                     .position(|&c| c == 0)
                     .unwrap_or(pe.szExeFile.len());
                 let name = String::from_utf16_lossy(&pe.szExeFile[..len]);
-                if QAQH_PROCESSES
-                    .iter()
-                    .any(|p| p.eq_ignore_ascii_case(&name))
-                {
+                if QAQH_PROCESSES.iter().any(|p| p.eq_ignore_ascii_case(&name)) {
                     result.push(ProcInfo {
                         pid: pe.th32ProcessID,
                         name,
@@ -197,12 +194,9 @@ fn stop_daemon_via_http() -> bool {
         return false;
     }
 
-    // 从 "ws://127.0.0.1:PORT/control/v1" 提取 socket 地址
-    let addr = endpoint
-        .trim_start_matches("ws://")
-        .split('/')
-        .next()
-        .unwrap_or("");
+    // 从 endpoint 提取 socket 地址（前缀无关：兼容遗留
+    // "ws://127.0.0.1:PORT/control/v1" 与新 "http://127.0.0.1:PORT"）。
+    let addr = endpoint_authority(endpoint);
 
     let Ok(socket_addr) = addr.parse::<std::net::SocketAddr>() else {
         return false;
@@ -238,6 +232,19 @@ fn stop_daemon_via_http() -> bool {
         }
         _ => false,
     }
+}
+
+/// 从 discovery `endpoint` 提取 host:port（authority）。
+///
+/// 前缀无关：daemon 曾用遗留 WS 形式 `ws://host:port/control/v1`，现已迁移为
+/// 纯 HTTP 形式 `http://host:port`；裸 `host:port` 亦兼容。仅取 authority，
+/// 路径后缀一律忽略。
+fn endpoint_authority(endpoint: &str) -> &str {
+    let without_scheme = match endpoint.split_once("://") {
+        Some((_, rest)) => rest,
+        None => endpoint,
+    };
+    without_scheme.split('/').next().unwrap_or_default()
 }
 
 /// 强制终止：TerminateProcess（内核强杀）+ taskkill /f /t 兜底。
@@ -283,13 +290,29 @@ pub fn is_alive(pid: u32) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::QAQH_PROCESSES;
+    use super::{endpoint_authority, QAQH_PROCESSES};
 
     #[test]
     fn workspace_service_is_part_of_the_installer_shutdown_allowlist() {
         assert!(QAQH_PROCESSES
             .iter()
             .any(|name| name.eq_ignore_ascii_case("qaqh-workspace.exe")));
+    }
+
+    #[test]
+    fn endpoint_authority_is_prefix_independent() {
+        // 遗留 WS 数据协议形式（含 /control/v1 后缀）
+        assert_eq!(
+            endpoint_authority("ws://127.0.0.1:8787/control/v1"),
+            "127.0.0.1:8787"
+        );
+        // 新 HTTP 形式（M3 拆除 WS 后的目标格式）
+        assert_eq!(
+            endpoint_authority("http://127.0.0.1:8787"),
+            "127.0.0.1:8787"
+        );
+        // 裸 authority 兜底
+        assert_eq!(endpoint_authority("127.0.0.1:8787"), "127.0.0.1:8787");
     }
 }
 

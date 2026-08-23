@@ -174,7 +174,7 @@ pub fn init() {
 /// （清空缓冲与聚合，避免跨模式串扰/残留污染导出）。
 pub fn set_mode(mode: Mode) {
     MODE.store(mode.to_u8(), Ordering::Relaxed);
-    let mut buf = buffer().lock().unwrap();
+    let mut buf = buffer().lock().unwrap_or_else(|e| e.into_inner());
     buf.events.clear();
     buf.agg = Agg::default();
     drop(buf);
@@ -208,7 +208,7 @@ pub fn record_render(
         return;
     }
     let at_ms = uptime_ms();
-    let mut buf = buffer().lock().unwrap();
+    let mut buf = buffer().lock().unwrap_or_else(|e| e.into_inner());
     let agg = &mut buf.agg;
     agg.renders += 1;
     agg.tree_ms_sum += tree_ms;
@@ -243,7 +243,7 @@ pub fn record_frame_interval(interval_ms: f64) {
         return;
     }
     let at_ms = uptime_ms();
-    let mut buf = buffer().lock().unwrap();
+    let mut buf = buffer().lock().unwrap_or_else(|e| e.into_inner());
     let agg = &mut buf.agg;
     agg.frames += 1;
     agg.frame_ms_sum += interval_ms;
@@ -265,7 +265,7 @@ pub fn record_drain(events: u32) {
         return;
     }
     let at_ms = uptime_ms();
-    let mut buf = buffer().lock().unwrap();
+    let mut buf = buffer().lock().unwrap_or_else(|e| e.into_inner());
     let agg = &mut buf.agg;
     agg.drains += 1;
     agg.drain_events += events as u64;
@@ -281,7 +281,7 @@ pub fn record_scale(turns: u32, window: u32, rev: u64) {
         return;
     }
     let at_ms = uptime_ms();
-    let mut buf = buffer().lock().unwrap();
+    let mut buf = buffer().lock().unwrap_or_else(|e| e.into_inner());
     buf.agg.scales += 1;
     if MODE.load(Ordering::Relaxed) == MODE_FULL {
         push_event(
@@ -304,7 +304,7 @@ pub fn record_fault(context: &'static str) {
         return;
     }
     let at_ms = uptime_ms();
-    let mut buf = buffer().lock().unwrap();
+    let mut buf = buffer().lock().unwrap_or_else(|e| e.into_inner());
     let agg = &mut buf.agg;
     if let Some((_, n)) = agg.faults.iter_mut().find(|(c, _)| *c == context) {
         *n += 1;
@@ -327,7 +327,7 @@ fn push_event(ev: Event, buf: &mut Buffer) {
 
 /// 生成诊断包 JSON（白名单字段；`mode` 为当前模式）。
 pub fn export_json() -> Value {
-    let buf = buffer().lock().unwrap();
+    let buf = buffer().lock().unwrap_or_else(|e| e.into_inner());
     let agg = buf.agg.clone();
     let events: Vec<Value> = if mode() == Mode::Full {
         buf.events.iter().map(event_to_json).collect()
@@ -405,7 +405,11 @@ pub fn buffered_events() -> usize {
     if mode() == Mode::Zero {
         return 0;
     }
-    buffer().lock().unwrap().events.len()
+    buffer()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .events
+        .len()
 }
 
 fn event_to_json(ev: &Event) -> Value {
@@ -493,7 +497,7 @@ mod tests {
     /// 模式切换 + 持久化 roundtrip。
     #[test]
     fn mode_roundtrip() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         set_mode(Mode::Full);
         assert_eq!(mode(), Mode::Full);
         set_mode(Mode::Zero);
@@ -505,7 +509,7 @@ mod tests {
     /// ZDR：record_* 全为 no-op，缓冲为空、导出 perf 计数为 0。
     #[test]
     fn zdr_is_noop() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         set_mode(Mode::Zero);
         record_render(1.0, 2.0, 0.5, 3, 4, 5);
         record_frame_interval(16.6);
@@ -521,7 +525,7 @@ mod tests {
     /// Full：事件入环形缓冲，导出含时间线 + 聚合 + OS 版本号。
     #[test]
     fn full_collects_and_exports() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         set_mode(Mode::Full);
         record_render(1.5, 2.5, 0.5, 3, 4, 5);
         record_frame_interval(16.6);
@@ -558,7 +562,7 @@ mod tests {
     /// 环形缓冲上限：溢出丢最老。
     #[test]
     fn ring_bounded() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         set_mode(Mode::Full);
         for i in 0..(RING_CAPACITY + 10) {
             record_drain(i as u32);
@@ -570,7 +574,7 @@ mod tests {
     /// Minimal：聚合累计但不存事件时间线。
     #[test]
     fn minimal_aggregates_only() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         set_mode(Mode::Minimal);
         record_render(2.0, 1.0, 0.0, 1, 1, 1);
         record_render(4.0, 3.0, 0.0, 2, 2, 2);

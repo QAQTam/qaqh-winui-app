@@ -179,8 +179,8 @@ pub(crate) fn models_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
                 .on_value_changed({
                     let draft = draft.clone();
                     let dirty = dirty.clone();
-move |v: f64| {
-                    if (v - rendered_max_tokens).abs() < f64::EPSILON {
+                    move |v: f64| {
+                        if (v - rendered_max_tokens).abs() < f64::EPSILON {
                             return;
                         }
                         draft.borrow_mut().max_tokens = v as u64;
@@ -336,12 +336,10 @@ pub(crate) fn api_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
             .into(),
     ));
     rows.push(
-        text_block(
-            "留空 = 保持不变/继承主 Key；输入新值 = 替换（密钥已加密存储，界面不回显）",
-        )
-        .font_size(11.0)
-        .foreground(ThemeRef::SecondaryText)
-        .into(),
+        text_block("留空 = 保持不变/继承主 Key；输入新值 = 替换（密钥已加密存储，界面不回显）")
+            .font_size(11.0)
+            .foreground(ThemeRef::SecondaryText)
+            .into(),
     );
 }
 
@@ -388,7 +386,7 @@ pub(crate) fn context_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
         )
         .selected_index(rendered_effort_idx)
         .header("")
-                .background(ThemeRef::SolidBackground)
+        .background(ThemeRef::SolidBackground)
         .on_selection_changed({
             let draft = draft.clone();
             let dirty = dirty.clone();
@@ -606,7 +604,7 @@ pub(crate) fn workspace_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
         )
         .selected_index(rendered_ws_idx)
         .header("")
-                .background(ThemeRef::SolidBackground)
+        .background(ThemeRef::SolidBackground)
         .on_selection_changed({
             let draft = draft.clone();
             let dirty = dirty.clone();
@@ -698,7 +696,7 @@ pub(crate) fn appearance_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
         ])
         .selected_index(rendered_theme_idx)
         .header("")
-                .background(ThemeRef::SolidBackground)
+        .background(ThemeRef::SolidBackground)
         .on_selection_changed({
             let proj_draft = proj_draft.clone();
             let dirty = dirty.clone();
@@ -732,7 +730,7 @@ pub(crate) fn appearance_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
         qaqh_fluent::solid_combo_box(vec!["中文".to_string(), "English".to_string()])
             .selected_index(rendered_lang_idx)
             .header("")
-                .background(ThemeRef::SolidBackground)
+            .background(ThemeRef::SolidBackground)
             .on_selection_changed({
                 let proj_draft = proj_draft.clone();
                 let dirty = dirty.clone();
@@ -782,7 +780,7 @@ pub(crate) fn appearance_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
         )
         .selected_index(font_idx)
         .header("")
-                .background(ThemeRef::SolidBackground)
+        .background(ThemeRef::SolidBackground)
         .on_selection_changed({
             let draft = draft.clone();
             let dirty = dirty.clone();

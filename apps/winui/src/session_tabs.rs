@@ -42,7 +42,8 @@ fn truncate_title(title: &str) -> String {
     if end >= title.len() {
         title.to_string()
     } else {
-        format!("{}…", &title[..end])
+        let head = title.get(..end).unwrap_or(title);
+        format!("{head}…")
     }
 }
 
