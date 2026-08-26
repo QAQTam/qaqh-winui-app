@@ -19,7 +19,7 @@ use std::ptr;
 use std::sync::OnceLock;
 
 /// Explicit Windows-native choice used when the user opts out of QAQ-Harness's
-/// packaged HarmonyOS Sans default.
+/// packaged MiSans default.
 pub const WINDOWS_UI_FONT_FAMILY: &str =
     "Segoe UI Variable, Segoe UI, Microsoft YaHei UI, Microsoft YaHei, Segoe UI Emoji";
 

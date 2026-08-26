@@ -60,7 +60,7 @@ fn log_diag(msg: &str) {
     if let Ok(mut f) = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(std::env::var("QAQH_WINUI_LOG").unwrap_or_else(|_| ".deepx-winui.log".into()))
+        .open(std::env::var("QAQH_WINUI_LOG").unwrap_or_else(|_| ".qaqh-winui.log".into()))
     {
         let _ = writeln!(f, "[interaction_overlay] {msg}");
     }

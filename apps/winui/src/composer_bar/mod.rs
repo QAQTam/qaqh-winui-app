@@ -46,7 +46,7 @@ fn log_diag(msg: &str) {
     if let Ok(mut f) = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(std::env::var("QAQH_WINUI_LOG").unwrap_or_else(|_| ".deepx-winui.log".into()))
+        .open(std::env::var("QAQH_WINUI_LOG").unwrap_or_else(|_| ".qaqh-winui.log".into()))
     {
         let _ = writeln!(f, "[composer_bar] {msg}");
     }
@@ -77,7 +77,7 @@ const CUSTOM_MODE_DEFAULT_TOOLS: &[&str] = &[
     "todo",
     "ask",
     "web_fetch",
-    "image",
+    "read_image",
     "process",
     "skills",
 ];
@@ -128,7 +128,7 @@ const SLASH_COMMANDS: &[(&str, &str, &str)] = &[
     ("/settings", "设置", "打开应用设置"),
     ("/model", "模型", "切换对话模型"),
     ("/effort", "强度", "调整推理强度"),
-    ("/usage", "用量", "查看用量图表"),
+    ("/usage", "用量", "查看用量详情（info 面板）"),
 ];
 
 /// 匹配候选（对齐 Web `matchSlashCommands`：仅 "/" 开头时返回）。
@@ -155,13 +155,13 @@ fn match_slash_commands(value: &str) -> Vec<(String, String, String)> {
 // ── 附件（本地草稿态）───────────────────────────────────────────
 
 #[derive(Clone)]
-enum AttachmentKind {
+pub(crate) enum AttachmentKind {
     Image { mime_type: String },
     Text,
 }
 
 #[derive(Clone)]
-struct AttachmentItem {
+pub(crate) struct AttachmentItem {
     id: String,
     kind: AttachmentKind,
     file_name: String,
@@ -202,6 +202,21 @@ fn fmt_thousands(n: u64) -> String {
     out
 }
 
+/// 工作区 chip 显示标签：取路径末两段（长路径截断，完整路径走 tooltip）。
+fn short_cwd(cwd: &str) -> String {
+    let parts: Vec<&str> = cwd.split(['\\', '/']).filter(|p| !p.is_empty()).collect();
+    let n = parts.len();
+    if n == 0 {
+        return cwd.to_string();
+    }
+    let start = n.saturating_sub(2);
+    let mut s = parts[start..].join("\\");
+    if start > 0 {
+        s = format!("…\\{s}");
+    }
+    s
+}
+
 /// 复制图片到 %TEMP% 做预览源（WinUI Image 不支持 base64，用 file:// 加载）。
 /// 返回临时文件路径；失败返回 None（预览降级为仅文件名，不影响发送）。
 fn write_preview_copy(src: &str, id: &str) -> Option<String> {
@@ -224,11 +239,21 @@ fn remove_preview(preview_path: Option<&str>) {
 
 /// 草稿态（纯 UI，不进协议；提交时组装载荷）。
 #[derive(Clone, Default)]
-struct Draft {
-    text: String,
+pub(crate) struct Draft {
+    pub(crate) text: String,
     attachments: Vec<AttachmentItem>,
     selected_slash: usize,
     dismissed_slash: Option<String>,
+}
+
+impl Draft {
+    /// 测试/桥接构造（仅文本；其余默认）。
+    pub(crate) fn with_text(text: String) -> Self {
+        Self {
+            text,
+            ..Default::default()
+        }
+    }
 }
 
 /// XAML Composer 底部栏（chat 视图；main.rs 内层 grid row1 挂载）。

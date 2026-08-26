@@ -138,9 +138,11 @@ pub struct HeaderState {
     /// 当前会话 seed（chat 视图；apply_header 同步 active_seed）。
     pub seed: String,
     pub info_open: bool,
-    pub stats_open: bool,
     pub compacting: bool,
     pub compact_disabled: bool,
+    /// 压缩终态（F-N3）：None=无；Some("completed") 由 header 3s 自动
+    /// 清除；Some("failed") 常驻至用户再次发起压缩。
+    pub compact_result: Option<String>,
     pub undo_disabled: bool,
     pub pet_enabled: bool,
 }
@@ -152,8 +154,6 @@ pub enum HeaderFlag {
     /// 恢复入口时即用）。
     #[allow(dead_code)]
     Info,
-    /// Stats 面板开合。
-    Stats,
 }
 
 /// XAML 设置页本地投影（由 `config.load` 等 daemon 数据派生）。
@@ -830,6 +830,20 @@ pub(crate) fn parse_agent_name(args_so_far: &str) -> Option<String> {
 /// ERROR / CANCELLED / TIMEOUT 变体）。不匹配返回 None。
 pub(crate) fn parse_subagent_injection(text: &str) -> Option<(String, SubagentState)> {
     let text = text.trim_start();
+    // 新形态（XML 信封）：<qaqh_subagent_result name="x" state="completed" exit="0">
+    if let Some(rest) = text.strip_prefix("<qaqh_subagent_result ") {
+        let name = rest.split("name=\"").nth(1)?.split('"').next()?;
+        let state_part = rest.split("state=\"").nth(1)?.split('"').next()?;
+        let state = match state_part {
+            "completed" => SubagentState::Done,
+            "error" => SubagentState::Error,
+            "timeout" => SubagentState::Timeout,
+            "cancelled" => SubagentState::Cancelled,
+            _ => return None,
+        };
+        return Some((name.to_string(), state));
+    }
+    // 旧形态兼容：[SUBAGENT 'name' STATE]（历史 transcript 重放仍可收敛）
     let rest = text.strip_prefix("[SUBAGENT '")?;
     let (name, rest) = rest.split_once("' ")?;
     let state = if rest.starts_with("COMPLETED]") {
@@ -874,13 +888,13 @@ pub(crate) fn parse_spawn_seed(model_text: &str) -> Option<String> {
 }
 
 /// 数据根目录（对齐 qaqh_types::platform::data_dir）：`QAQH_DATA_DIR`
-/// 覆盖，否则 Windows `%USERPROFILE%\.deepx` / Unix `$HOME/.deepx`。
+/// 覆盖，否则 Windows `%USERPROFILE%\.qaqh` / Unix `$HOME/.qaqh`。
 fn data_root_dir() -> std::path::PathBuf {
     std::env::var("QAQH_DATA_DIR")
         .ok()
         .filter(|d| !d.is_empty())
         .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| user_home_dir().join(".deepx"))
+        .unwrap_or_else(|| user_home_dir().join(".qaqh"))
 }
 
 /// 当前用户 home（Windows `USERPROFILE` / Unix `HOME`）。
@@ -899,7 +913,7 @@ fn user_home_dir() -> std::path::PathBuf {
 /// 会话元数据文件路径（`<data>/sessions/{seed}/meta.json`）。上下文构成
 /// 快照（context_stats）已并入 meta.json（原独立 context_stats.json 退役）。
 /// 数据根对齐 qaqh_types::platform::data_dir：`QAQH_DATA_DIR` 覆盖，
-/// 否则 Windows `%USERPROFILE%\.deepx` / Unix `$HOME/.deepx`。
+/// 否则 Windows `%USERPROFILE%\.qaqh` / Unix `$HOME/.qaqh`。
 pub(crate) fn context_stats_path(seed: &str) -> std::path::PathBuf {
     data_root_dir()
         .join("sessions")
@@ -907,7 +921,7 @@ pub(crate) fn context_stats_path(seed: &str) -> std::path::PathBuf {
         .join("meta.json")
 }
 
-/// data-root marker（`<data>/.deepx-data-root.json`）——字段与命名镜像
+/// data-root marker（`<data>/.qaqh-data-root.json`）——字段与命名镜像
 /// qaqh_types::platform 的 `DataRootMarker`。
 #[derive(Debug, Deserialize, Serialize)]
 struct DataRootMarker {
@@ -966,7 +980,7 @@ pub(crate) fn migrate_legacy_data_root_marker() -> bool {
 }
 
 fn migrate_legacy_data_root_at(data_root: &std::path::Path, home: &std::path::Path) -> bool {
-    let marker_path = data_root.join(".deepx-data-root.json");
+    let marker_path = data_root.join(".qaqh-data-root.json");
     let Ok(raw) = std::fs::read_to_string(&marker_path) else {
         return false;
     };
@@ -1004,7 +1018,7 @@ fn migrate_legacy_data_root_at(data_root: &std::path::Path, home: &std::path::Pa
         log_diag("data root marker: migration serialization failed");
         return false;
     };
-    let temporary = data_root.join(".deepx-data-root.json.deepx-new");
+    let temporary = data_root.join(".qaqh-data-root.json.qaqh-new");
     if let Err(error) = std::fs::write(&temporary, &bytes) {
         log_diag(&format!(
             "data root marker: migration write failed: {error}"
@@ -1082,6 +1096,9 @@ pub struct ComposerState {
     /// 工具模式：standard | minimal | custom（PLAN-TOOL-MODES.md；空 = standard）。
     /// 与 `mode`（plan/code AGENT_MODE）正交：本字段管 allowed 工具集。
     pub tool_mode: String,
+    /// 活动会话工作目录（后端 meta.cwd 持久源，重启安全；None = 未设置）。
+    /// composer 工具行工作区 chip 显示源，点击经 workspace.set 更新。
+    pub cwd: Option<String>,
     /// 创造模式的自定义工具白名单（仅 custom 生效；空 = 未配置）。
     pub tool_mode_custom_tools: Vec<String>,
 }
@@ -1166,23 +1183,24 @@ mod data_root_tests {
         // 与 qaqh_types::platform::data_root_id 同构（FNV-1a 64）：
         // 旧 DeepX 遗留 marker 的 rootId 必须原样通过校验。
         assert_eq!(
-            data_root_marker_id("c:/users/qaqtam/.deepx", "c:/users/qaqtam"),
-            "data-d8773e7dcb45bed4"
+            data_root_marker_id("c:/users/qaqtam/.qaqh", "c:/users/qaqtam"),
+            // .qaqh 品牌迁移后重算的期望值（旧 .deepx 哈希 d8773e7dcb45bed4）
+            "data-8c89e496c69d6e55"
         );
     }
 
     #[test]
-    fn migrate_legacy_deepx_marker_rewrites_product_in_place() {
+    fn migrate_legacy_qaqh_marker_rewrites_product_in_place() {
         let root = temp_root();
         let home = root.join("home");
-        std::fs::create_dir_all(&root.join(".deepx")).unwrap();
+        std::fs::create_dir_all(&root.join(".qaqh")).unwrap();
         std::fs::create_dir_all(&home).unwrap();
-        let data = std::fs::canonicalize(root.join(".deepx")).unwrap();
+        let data = std::fs::canonicalize(root.join(".qaqh")).unwrap();
         let home = std::fs::canonicalize(&home).unwrap();
         let canonical_root = normalize_data_path_text(&data);
         let owner_home = normalize_data_path_text(&home);
         let root_id = data_root_marker_id(&canonical_root, &owner_home);
-        let marker_path = data.join(".deepx-data-root.json");
+        let marker_path = data.join(".qaqh-data-root.json");
         std::fs::write(
             &marker_path,
             serde_json::to_vec_pretty(&DataRootMarker {
@@ -1213,16 +1231,16 @@ mod data_root_tests {
     #[test]
     fn migrate_skips_foreign_or_unknown_markers() {
         let root = temp_root();
-        std::fs::create_dir_all(&root.join(".deepx")).unwrap();
+        std::fs::create_dir_all(&root.join(".qaqh")).unwrap();
         std::fs::create_dir_all(root.join("home")).unwrap();
-        let data = std::fs::canonicalize(root.join(".deepx")).unwrap();
+        let data = std::fs::canonicalize(root.join(".qaqh")).unwrap();
         let home = std::fs::canonicalize(root.join("home")).unwrap();
         let canonical_root = normalize_data_path_text(&data);
         let owner_home = normalize_data_path_text(&home);
 
         // 陌生产品：拒绝迁移。
         std::fs::write(
-            data.join(".deepx-data-root.json"),
+            data.join(".qaqh-data-root.json"),
             serde_json::to_vec_pretty(&DataRootMarker {
                 format_version: 1,
                 product: "OtherApp".into(),
@@ -1234,12 +1252,12 @@ mod data_root_tests {
         )
         .unwrap();
         assert!(!migrate_legacy_data_root_at(&data, &home));
-        let raw = std::fs::read_to_string(data.join(".deepx-data-root.json")).unwrap();
+        let raw = std::fs::read_to_string(data.join(".qaqh-data-root.json")).unwrap();
         assert!(raw.contains("OtherApp"));
 
         // 同产品线但归属另一目录：不越权接管。
         std::fs::write(
-            data.join(".deepx-data-root.json"),
+            data.join(".qaqh-data-root.json"),
             serde_json::to_vec_pretty(&DataRootMarker {
                 format_version: 1,
                 product: "DeepX".into(),
@@ -1251,7 +1269,7 @@ mod data_root_tests {
         )
         .unwrap();
         assert!(!migrate_legacy_data_root_at(&data, &home));
-        let raw = std::fs::read_to_string(data.join(".deepx-data-root.json")).unwrap();
+        let raw = std::fs::read_to_string(data.join(".qaqh-data-root.json")).unwrap();
         assert!(raw.contains("DeepX"));
         std::fs::remove_dir_all(&root).unwrap();
     }

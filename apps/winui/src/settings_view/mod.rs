@@ -30,7 +30,7 @@ pub use view::settings_view;
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// 分类定义（id + 中文标签 + Fluent Symbol，对齐 Web `categories()`）。
-const CATEGORIES: [(&str, &str, Symbol); 9] = [
+pub const CATEGORIES: [(&str, &str, Symbol); 9] = [
     ("models", "模型", Symbol::Library),
     ("api", "API 密钥", Symbol::Setting),
     ("context", "上下文", Symbol::Document),
@@ -81,6 +81,10 @@ pub(crate) struct SettingsCtx {
     pub(crate) draft: HookRef<SettingsSnapshot>,
     pub(crate) proj_draft: HookRef<SettingsProjection>,
     pub(crate) dirty: HookRef<bool>,
+    /// 最近一次非零压缩阈值（开关关闭时保留，重开时恢复——P0 用户反馈：
+    /// 关→开不应丢掉调好的 0.95 无条件回落 0.75）。由 view 轮询权威快照
+    /// 与滑杆回调双路种子。
+    pub(crate) compact_restore: HookRef<f64>,
     pub(crate) d: SettingsSnapshot,
     pub(crate) pd: SettingsProjection,
     pub(crate) set_diag_rev: SetState<u32>,

@@ -34,9 +34,26 @@ mod tests {
             parse_subagent_injection("[SUBAGENT 'x' CANCELLED]"),
             Some(("x".to_string(), SubagentState::Cancelled))
         );
+        // 新 XML 信封形态。
+        assert_eq!(
+            parse_subagent_injection(
+                "<qaqh_subagent_result name=\"explore\" state=\"completed\" exit=\"0\">\nanswer"
+            ),
+            Some(("explore".to_string(), SubagentState::Done))
+        );
+        assert_eq!(
+            parse_subagent_injection(
+                "<qaqh_subagent_result name=\"x\" state=\"timeout\" exit=\"1\">"
+            ),
+            Some(("x".to_string(), SubagentState::Timeout))
+        );
         // 非注入文本 / 运行中标签不匹配。
         assert_eq!(parse_subagent_injection("normal user message"), None);
         assert_eq!(parse_subagent_injection("[SUBAGENT 'x' RUNNING]"), None);
+        assert_eq!(
+            parse_subagent_injection("<qaqh_other_tag name=\"x\">"),
+            None
+        );
     }
 
     #[test]
@@ -141,6 +158,8 @@ mod tests {
             settings_rev: AtomicU64::new(0),
             settings_proj: Mutex::new(SettingsProjection::default()),
             settings_proj_rev: AtomicU64::new(0),
+            save_status: Mutex::new(None),
+            save_status_rev: AtomicU64::new(0),
             info: Mutex::new(None),
             info_rev: AtomicU64::new(0),
             interaction: Mutex::new(InteractionState::default()),
@@ -153,6 +172,7 @@ mod tests {
             composer_tool_mode: Mutex::new(ToolModeState::default()),
             composer_feedback: Mutex::new(HashMap::new()),
             timeline_events: Mutex::new(TimelineEventQueues::default()),
+            composer_drafts: Mutex::new(HashMap::new()),
             timeline_rev: AtomicU64::new(0),
             resume_generation: AtomicU64::new(0),
             chat_timeline: Mutex::new(None),
@@ -841,6 +861,85 @@ mod tests {
         assert!(core.composer_snapshot().0.has_pending_gate);
     }
 
+    #[test]
+    fn composer_phase_goes_idle_when_streaming_stalls() {
+        // F-N5：SSE 断连后 activity 永远等不到 Ended；phase 必须与
+        // is_streaming 同源门控——stall 超时后标签归 Idle，而不是永久
+        // 残留「飞速思考中…/奋力回答中…」。
+        let core = test_core();
+        core.set_active_seed("seed1");
+        let now = unix_ms();
+        {
+            let mut map = core.composer_activity.lock().unwrap();
+            let a = map.entry("seed1".into()).or_default();
+            a.apply(ConversationActivityEvent::Started, now);
+            // 断连时刻正处于思考中：phase 停在 Thinking。
+            a.apply(ConversationActivityEvent::Delta(WorkPhase::Thinking), now);
+        }
+        // 流式窗口内：phase 保持 Thinking。
+        let (s, _) = core.composer_snapshot();
+        assert!(s.is_streaming);
+        assert_eq!(s.phase, WorkPhase::Thinking);
+        // 断连后时间流逝超过 stall 阈值（最后一次活动停在 4 分钟前）：
+        // is_streaming 翻 false，phase 必须同步归 Idle（修复前残留 Thinking）。
+        {
+            let mut map = core.composer_activity.lock().unwrap();
+            let a = map.get_mut("seed1").unwrap();
+            a.apply(
+                ConversationActivityEvent::Touched,
+                now - COMPOSER_STALL_TIMEOUT_MS - 1,
+            );
+        }
+        let (s2, _) = core.composer_snapshot();
+        assert!(!s2.is_streaming);
+        assert_eq!(s2.phase, WorkPhase::Idle);
+    }
+
+    #[test]
+    fn composer_draft_roundtrip_and_eviction() {
+        // F-N4：草稿存旧取新 + 容量逐出。
+        use crate::composer_bar::Draft;
+        let core = test_core();
+        core.save_draft("a", Draft::with_text("hello".into()));
+        assert_eq!(core.take_draft("a").unwrap().text, "hello");
+        assert!(core.take_draft("a").is_none(), "move 语义：取出即离场");
+        for i in 0..40 {
+            core.save_draft(&format!("s{i}"), Draft::with_text(format!("t{i}")));
+        }
+        assert!(
+            core.composer_drafts.lock().unwrap().len() <= BridgeCore::MAX_COMPOSER_DRAFTS,
+            "容量上限必须被尊重"
+        );
+    }
+
+    #[test]
+    fn compact_terminal_result_surfaces_in_header() {
+        // F-N3：压缩终态（completed/failed）透传 HeaderState.compact_result，
+        // running 不算终态；清除后归 None。
+        let core = test_core();
+        core.set_active_seed("seed1");
+        {
+            let mut map = core.compact_statuses.lock().unwrap();
+            map.insert("seed1".into(), "running".into());
+        }
+        core.refresh_header();
+        assert!(core.header_state.lock().unwrap().compact_result.is_none());
+
+        {
+            let mut map = core.compact_statuses.lock().unwrap();
+            map.insert("seed1".into(), "completed".into());
+        }
+        core.refresh_header();
+        assert_eq!(
+            core.header_state.lock().unwrap().compact_result.as_deref(),
+            Some("completed")
+        );
+
+        core.clear_compact_result("seed1");
+        assert!(core.header_state.lock().unwrap().compact_result.is_none());
+    }
+
+    #[test]
     #[test]
     fn timeline_stall_triggers_only_after_threshold() {
         let core = test_core();

@@ -10,6 +10,7 @@
 //! 的真实 fixture）。
 
 use qaqh_client::{ControlEvent, DomainActivityState, DomainSessionState};
+use qaqh_config_api::ConfigDto;
 use serde_json::Value;
 
 /// 会话活动状态（镜像 TS `SessionActivityState`）。
@@ -703,189 +704,94 @@ fn is_masked(v: &str) -> bool {
 /// default_model, models: [...]}]}]`；子对象 subagent/multimodal/workspace
 /// 同理 snake_case。`lang`/`permission_level` 顶层返回（App.tsx L659 同源）。
 pub fn parse_config_load(v: &Value) -> SettingsSnapshot {
-    let str_of = |key: &str| -> String {
-        v.get(key)
-            .and_then(|x| x.as_str())
-            .unwrap_or("")
-            .to_string()
+    // P1-C4：解析切换到 wire 契约层 ConfigDto（camelCase 写 / 历史 snake 别名
+    // 读宽容），手写逐字段闭包解析退役。解析失败（畸形类型）回退全默认快照，
+    // 由上层「加载中」兜底。
+    let dto: ConfigDto = match serde_json::from_value(v.clone()) {
+        Ok(dto) => dto,
+        Err(_) => return SettingsSnapshot::default(),
     };
-    let u64_of = |key: &str| -> u64 { v.get(key).and_then(|x| x.as_u64()).unwrap_or(0) };
-    let f64_of = |key: &str| -> f64 { v.get(key).and_then(|x| x.as_f64()).unwrap_or(0.0) };
-    let bool_of = |key: &str| -> bool { v.get(key).and_then(|x| x.as_bool()).unwrap_or(false) };
-    let sub = v.get("subagent");
-    let sub_of = |key: &str| -> String {
-        sub.and_then(|s| s.get(key))
-            .and_then(|x| x.as_str())
-            .unwrap_or("")
-            .to_string()
-    };
-    let sub_u64 = |key: &str| -> u64 {
-        sub.and_then(|s| s.get(key))
-            .and_then(|x| x.as_u64())
-            .unwrap_or(0)
-    };
-    let mm = v.get("multimodal");
-    let mm_of = |key: &str| -> String {
-        mm.and_then(|s| s.get(key))
-            .and_then(|x| x.as_str())
-            .unwrap_or("")
-            .to_string()
-    };
-    let mm_u64 = |key: &str| -> u64 {
-        mm.and_then(|s| s.get(key))
-            .and_then(|x| x.as_u64())
-            .unwrap_or(0)
-    };
-    let ws = v.get("workspace");
-
-    let api_key = str_of("api_key");
-    let sub_api_key = sub_of("api_key");
-    let mm_api_key = mm_of("api_key");
+    let sub = &dto.subagent;
     SettingsSnapshot {
         loaded: true,
-        api_key: if is_masked(&api_key) {
-            String::new()
+        api_key: clean_secret_input(&dto.api_key),
+        api_key_configured: is_masked(&dto.api_key),
+        model: dto.model,
+        base_url: dto.base_url,
+        provider_id: dto.provider_id,
+        endpoint: dto.endpoint,
+        max_tokens: dto.max_tokens,
+        context_limit: dto.context_limit,
+        reasoning_effort: dto.reasoning_effort,
+        auto_compact_threshold: dto.auto_compact_threshold,
+        compliance_enabled: dto.compliance_enabled,
+        active_profile: dto.active_profile,
+        profiles: dto.profiles,
+        sub_model: sub.model.clone(),
+        sub_base_url: sub.base_url.clone(),
+        sub_api_key: clean_secret_input(&sub.api_key),
+        sub_api_key_configured: is_masked(&sub.api_key),
+        sub_max_tokens: sub.max_tokens,
+        sub_timeout_secs: sub.timeout_secs,
+        sub_tools: sub.default_tools.clone(),
+        // 多模态外挂配置已废弃（2026-08 后端移除）；字段保留仅为兼容旧结构体。
+        mm_enabled: false,
+        mm_provider_type: String::new(),
+        mm_api_key: String::new(),
+        mm_api_key_configured: false,
+        mm_base_url: String::new(),
+        mm_model: String::new(),
+        mm_max_tokens: 0,
+        workspace_mode: if dto.workspace.mode.is_empty() {
+            "local".to_string()
         } else {
-            api_key.clone()
+            dto.workspace.mode.clone()
         },
-        api_key_configured: is_masked(&api_key),
-        model: str_of("model"),
-        base_url: str_of("base_url"),
-        provider_id: str_of("provider_id"),
-        endpoint: str_of("endpoint"),
-        max_tokens: u64_of("max_tokens"),
-        context_limit: u64_of("context_limit"),
-        reasoning_effort: str_of("reasoning_effort"),
-        auto_compact_threshold: f64_of("auto_compact_threshold"),
-        compliance_enabled: bool_of("compliance_enabled"),
-        active_profile: str_of("active_profile"),
-        profiles: v
-            .get("profiles")
-            .and_then(|x| x.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|x| x.as_str().map(str::to_string))
-                    .collect()
-            })
-            .unwrap_or_default(),
-        sub_model: sub_of("model"),
-        sub_base_url: sub_of("base_url"),
-        sub_api_key: if is_masked(&sub_api_key) {
-            String::new()
-        } else {
-            sub_api_key.clone()
-        },
-        sub_api_key_configured: is_masked(&sub_api_key),
-        sub_max_tokens: sub_u64("max_tokens"),
-        sub_timeout_secs: sub_u64("timeout_secs"),
-        sub_tools: sub
-            .and_then(|s| s.get("default_tools"))
-            .and_then(|x| x.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|x| x.as_str().map(str::to_string))
-                    .collect()
-            })
-            .unwrap_or_default(),
-        mm_enabled: mm
-            .and_then(|s| s.get("enabled"))
-            .and_then(|x| x.as_bool())
-            .unwrap_or(false),
-        mm_provider_type: mm_of("provider_type"),
-        mm_api_key: if is_masked(&mm_api_key) {
-            String::new()
-        } else {
-            mm_api_key.clone()
-        },
-        mm_api_key_configured: is_masked(&mm_api_key),
-        mm_base_url: mm_of("base_url"),
-        mm_model: mm_of("model"),
-        mm_max_tokens: mm_u64("max_tokens"),
-        workspace_mode: ws
-            .and_then(|s| s.get("mode"))
-            .and_then(|x| x.as_str())
-            .unwrap_or("local")
-            .to_string(),
+        // workspace 实际状态由并行的 WorkspaceStatus 查询回填。
         workspace_configured_mode: String::new(),
         workspace_active_mode: String::new(),
         workspace_endpoint: String::new(),
-        tokenizer_path: str_of("tokenizer_path"),
-        lang: str_of("lang"),
-        font_family: str_of("font_family"),
-        // theme：daemon `theme` 缺失/空 = 跟随系统（与 qaqh-config 语义一致）。
-        theme: {
-            let t = str_of("theme");
-            if t.is_empty() {
-                "system".to_string()
-            } else {
-                t
-            }
+        tokenizer_path: dto.tokenizer_path.clone().unwrap_or_default(),
+        lang: dto.lang.clone().unwrap_or_default(),
+        font_family: dto.font_family.clone(),
+        // theme：daemon 缺失/空 = 跟随系统（与 qaqh-config 语义一致）。
+        theme: match dto.theme.as_deref() {
+            Some(t) if !t.is_empty() => t.to_string(),
+            _ => "system".to_string(),
         },
-        // notifications_enabled：daemon 缺省 = 开启（unwrap_or(true)）。
-        notifications_enabled: v
-            .get("notifications_enabled")
-            .and_then(|x| x.as_bool())
-            .unwrap_or(true),
-        permission_level: u64_of("permission_level"),
-        providers: v
-            .get("providers")
-            .and_then(|x| x.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|p| {
-                        Some(ProviderInfo {
-                            id: p.get("id")?.as_str()?.to_string(),
-                            display: p.get("display")?.as_str()?.to_string(),
-                            endpoints: p
-                                .get("endpoints")
-                                .and_then(|e| e.as_array())
-                                .map(|eps| {
-                                    eps.iter()
-                                        .filter_map(|ep| {
-                                            Some(ProviderEndpoint {
-                                                id: ep.get("id")?.as_str()?.to_string(),
-                                                display: ep.get("display")?.as_str()?.to_string(),
-                                                protocol: ep
-                                                    .get("protocol")
-                                                    .and_then(|b| b.as_str())
-                                                    .unwrap_or("")
-                                                    .to_string(),
-                                                base_url: ep
-                                                    .get("base_url")
-                                                    .and_then(|b| b.as_str())
-                                                    .unwrap_or("")
-                                                    .to_string(),
-                                                default_model: ep
-                                                    .get("default_model")
-                                                    .and_then(|m| m.as_str())
-                                                    .unwrap_or("")
-                                                    .to_string(),
-                                                models: ep
-                                                    .get("models")
-                                                    .and_then(|m| m.as_array())
-                                                    .map(|ms| {
-                                                        ms.iter()
-                                                            .filter_map(|m| {
-                                                                m.as_str().map(str::to_string)
-                                                            })
-                                                            .collect()
-                                                    })
-                                                    .unwrap_or_default(),
-                                                beta: ep
-                                                    .get("beta")
-                                                    .and_then(|b| b.as_bool())
-                                                    .unwrap_or(false),
-                                            })
-                                        })
-                                        .collect()
-                                })
-                                .unwrap_or_default(),
-                        })
+        notifications_enabled: dto.notifications_enabled,
+        permission_level: u64::from(dto.permission_level),
+        providers: dto
+            .providers
+            .iter()
+            .map(|p| ProviderInfo {
+                id: p.id.clone(),
+                display: p.display.clone(),
+                endpoints: p
+                    .endpoints
+                    .iter()
+                    .map(|e| ProviderEndpoint {
+                        id: e.id.clone(),
+                        display: e.display.clone(),
+                        protocol: e.protocol.clone(),
+                        base_url: e.base_url.clone(),
+                        default_model: e.default_model.clone(),
+                        models: e.models.clone(),
+                        beta: e.beta,
                     })
-                    .collect()
+                    .collect(),
             })
-            .unwrap_or_default(),
+            .collect(),
         tools: Vec::new(),
+    }
+}
+
+/// 密钥输入清洗：掩码 `"****"` 视为未提供（界面不回显）。
+fn clean_secret_input(key: &str) -> String {
+    if is_masked(key) {
+        String::new()
+    } else {
+        key.to_string()
     }
 }
 
@@ -1242,10 +1148,9 @@ mod tests {
         assert_eq!(snap.sub_api_key, "");
         assert_eq!(snap.sub_model, "deepseek-reasoner");
         assert_eq!(snap.sub_tools, vec!["read_file", "grep"]);
-        assert!(snap.mm_enabled);
-        assert_eq!(snap.mm_api_key, "real-key"); // 未掩码 → 原样（可回显）
-        assert!(!snap.mm_api_key_configured);
-        assert_eq!(snap.mm_model, "mimo-v2.5");
+        // 多模态外挂配置已废弃（2026-08 后端移除）：投影恒为禁用默认。
+        assert!(!snap.mm_enabled);
+        assert_eq!(snap.mm_api_key, "");
         assert_eq!(snap.workspace_mode, "wsl");
         assert_eq!(snap.providers.len(), 1);
         assert_eq!(snap.providers[0].id, "deepseek");

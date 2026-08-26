@@ -323,7 +323,7 @@ impl eframe::App for MaintenanceApp {
                             ),
                         );
                         ui.label(
-                            egui::RichText::new("工作区内的 .deepx 数据不会自动删除。")
+                            egui::RichText::new("工作区内的 .qaqh 数据不会自动删除。")
                                 .size(11.0)
                                 .color(colors::TEXT_SECONDARY),
                         );
@@ -604,7 +604,7 @@ fn apply_staged(
     state.release_id = operation.release_id.clone();
     state.last_committed_operation = Some(operation_id.clone());
     write_installed_state(&state_path, &state)?;
-    let pending_path = safe_join_under_root(&target, ".deepx-update/pending.json")?;
+    let pending_path = safe_join_under_root(&target, ".qaqh-update/pending.json")?;
     if let Ok(value) = fs::read(&pending_path).and_then(|bytes| {
         serde_json::from_slice::<serde_json::Value>(&bytes)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
@@ -626,7 +626,7 @@ fn relaunch_and_verify(
     operation: &StagedOperation,
     operation_id: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let health_dir = safe_join_under_root(target, ".deepx-update/health")?;
+    let health_dir = safe_join_under_root(target, ".qaqh-update/health")?;
     fs::create_dir_all(&health_dir)?;
     let health = health_dir.join(format!("{operation_id}.ok"));
     let _ = fs::remove_file(&health);
@@ -737,7 +737,7 @@ fn stage(source: &str, target: &str) -> Result<(), Box<dyn std::error::Error>> {
 
     let stage_root = safe_join_under_root(
         &target,
-        &format!(".deepx-update/staging/{}", plan.operation_id),
+        &format!(".qaqh-update/staging/{}", plan.operation_id),
     )?;
     fs::create_dir_all(&stage_root)?;
     let mut staged = Vec::new();
@@ -816,7 +816,7 @@ fn stage(source: &str, target: &str) -> Result<(), Box<dyn std::error::Error>> {
     };
     let operation_path = stage_root.join("operation.json");
     fs::write(&operation_path, serde_json::to_vec_pretty(&operation)?)?;
-    let pending_path = safe_join_under_root(&target, ".deepx-update/pending.json")?;
+    let pending_path = safe_join_under_root(&target, ".qaqh-update/pending.json")?;
     let pending = serde_json::json!({
         "formatVersion": 1,
         "operationPath": operation_path,
@@ -848,7 +848,7 @@ fn verify_staged_operation_path(
     if operation.file_name().and_then(|name| name.to_str()) != Some("operation.json") {
         return Err("staged operation must be named operation.json".into());
     }
-    let staging = safe_join_under_root(target, ".deepx-update/staging")?;
+    let staging = safe_join_under_root(target, ".qaqh-update/staging")?;
     let staging = fs::canonicalize(&staging)?;
     if !operation.starts_with(&staging) || operation == staging {
         return Err(format!(

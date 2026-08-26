@@ -475,7 +475,7 @@ fn stop_daemon_via_http() {
     let Some(home) = dirs::home_dir() else {
         return;
     };
-    let Ok(content) = fs::read_to_string(home.join(".deepx").join("daemon.json")) else {
+    let Ok(content) = fs::read_to_string(home.join(".qaqh").join("daemon.json")) else {
         return;
     };
     let Ok(discovery) = serde_json::from_str::<serde_json::Value>(&content) else {

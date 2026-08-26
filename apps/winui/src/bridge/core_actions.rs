@@ -358,6 +358,14 @@ impl super::BridgeCore {
         self.refresh_header();
     }
 
+    /// 当前壳视图名（F-N1 返回判定：settings/skills 才响应 Alt+Left）。
+    pub(crate) fn current_view_name(&self) -> String {
+        self.current_view
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
     /// Lazily connect the qaqh-client and register event forwarding.
     // ── 远端 daemon 档案（临时跨端模式）──────────────────────────
 

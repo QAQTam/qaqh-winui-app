@@ -97,11 +97,17 @@ pub mod tokens {
 
     /// Packaged UI font followed by native Windows fallbacks. The corresponding
     /// files are staged by `qaqh-winui` under `Assets/fonts`.
-    pub const DEFAULT_UI_FONT_FAMILY: &str = "ms-appx:///Assets/fonts/HarmonyOS_Sans_SC_Regular.ttf#HarmonyOS Sans SC, Segoe UI Variable, Microsoft YaHei UI, Segoe UI, Segoe UI Emoji";
+    ///
+    /// MiSans VF 是可变字体（wght 150..700 单轴连续）：FontWeight 400/600/700
+    /// 均由 DWrite 按轴实例化出**真实字重**，不再依赖单一 Regular 静态面的
+    /// 合成加粗（此前 HarmonyOS Sans SC 仅打包 Regular，bold/semibold 全走
+    /// 算法 emboldening，笔画发糊）。
+    pub const DEFAULT_UI_FONT_FAMILY: &str = "ms-appx:///Assets/fonts/MiSansVF.ttf#MiSans VF, Segoe UI Variable, Microsoft YaHei UI, Segoe UI, Segoe UI Emoji";
     /// Variable monospaced font for code, numeric telemetry, and raw tool data.
     /// CJK fallback 链：等宽字体不含中文，缺省时中文会落系统默认（雅黑），
-    /// 与正文 HarmonyOS 混排观感割裂——显式带回退。
-    pub const CODE_FONT_FAMILY: &str = "ms-appx:///Assets/fonts/CascadiaMono.ttf#Cascadia Mono, Consolas, Microsoft YaHei UI, HarmonyOS Sans SC";
+    /// 与正文 MiSans 混排观感割裂——显式带回退（雅黑为系统字体，随装可用；
+    /// MiSans 未做系统安装，不能作为裸族名出现在回退链里）。
+    pub const CODE_FONT_FAMILY: &str = "ms-appx:///Assets/fonts/CascadiaMono.ttf#Cascadia Mono, Consolas, Microsoft YaHei UI";
 
     /// Comfortable reading measure for long-form assistant output.
     /// Aligned with [`CONVERSATION_MAX_WIDTH`] so the transcript column and the

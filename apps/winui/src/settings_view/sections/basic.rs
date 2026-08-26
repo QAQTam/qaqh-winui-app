@@ -167,10 +167,6 @@ pub(crate) fn models_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
         // 下界 16（小模型可用），上界 1_000_000（主流长输出模型已支持 128K+）。
         const MAX_TOKENS_MIN: f64 = 16.0;
         const MAX_TOKENS_MAX: f64 = 1_000_000.0;
-        // 守卫对比"渲染值钳到合法区间后的结果"：草稿值为 0/越界时 WinUI 会把
-        // 控件值钳到区间端点并回发 ValueChanged（如 0→16），若对比原始 0 会误判
-        // 为用户输入而把区间端点写回草稿（根因 3 同类）。
-        let rendered_max_tokens = (d.max_tokens as f64).clamp(MAX_TOKENS_MIN, MAX_TOKENS_MAX);
         rows.push(field_row(
             "最大 Tokens",
             NumberBox::new(d.max_tokens as f64)
@@ -180,7 +176,12 @@ pub(crate) fn models_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
                     let draft = draft.clone();
                     let dirty = dirty.clone();
                     move |v: f64| {
-                        if (v - rendered_max_tokens).abs() < f64::EPSILON {
+                        // live-draft 守卫（见 context_section 注释）。
+                        let cur = (draft.borrow().max_tokens as f64)
+                            .clamp(MAX_TOKENS_MIN, MAX_TOKENS_MAX);
+                        if (cur - v).abs() < f64::EPSILON
+                            || !(MAX_TOKENS_MIN..=MAX_TOKENS_MAX).contains(&v)
+                        {
                             return;
                         }
                         draft.borrow_mut().max_tokens = v as u64;
@@ -346,13 +347,15 @@ pub(crate) fn api_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
 pub(crate) fn context_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
     let draft = ctx.draft.clone();
     let dirty = ctx.dirty.clone();
+    let compact_restore = ctx.compact_restore.clone();
     let d = ctx.d.clone();
     rows.push(section_title("上下文窗口"));
     const CONTEXT_MIN: f64 = 10000.0;
     const CONTEXT_MAX: f64 = 10_000_000.0;
-    // 同上：守卫对比"渲染值钳到合法区间后的结果"，防止草稿值越界（0）时被
-    // WinUI 钳到 10000 并回发、误写回草稿（根因 3 的上下文重置源头）。
-    let rendered_context = (d.context_limit as f64).clamp(CONTEXT_MIN, CONTEXT_MAX);
+    // 守卫已升级为「live-draft 对比」（2026-08-25 P0 反馈）：渲染期捕获值在闭包
+    // 跨渲染后是陈旧引用，WinUI coerce 回声可绕过等值守卫写穿草稿（思考链/
+    // 压缩联动互踩的根因）。现统一改为：①区间外回声直接忽略；②与「草稿现值
+    // 钳到合法区间」比较——控件把越界现值 coerce 到端点（0→10000）不算用户输入。
     rows.push(field_row(
         "上下文限制",
         NumberBox::new(d.context_limit as f64)
@@ -362,8 +365,8 @@ pub(crate) fn context_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
                 let draft = draft.clone();
                 let dirty = dirty.clone();
                 move |v: f64| {
-                    // 防程序化同步误触发：与 permission 滑杆同理，渲染值回写时跳过
-                    if (v - rendered_context).abs() < f64::EPSILON {
+                    let cur = (draft.borrow().context_limit as f64).clamp(CONTEXT_MIN, CONTEXT_MAX);
+                    if (cur - v).abs() < f64::EPSILON || !(CONTEXT_MIN..=CONTEXT_MAX).contains(&v) {
                         return;
                     }
                     draft.borrow_mut().context_limit = v as u64;
@@ -391,12 +394,18 @@ pub(crate) fn context_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
             let draft = draft.clone();
             let dirty = dirty.clone();
             move |i: i32| {
-                if i == rendered_effort_idx {
-                    return;
-                }
-                if let Some(e) = EFFORT_LADDER.get(i as usize) {
-                    draft.borrow_mut().reasoning_effort = e.to_string();
-                    *dirty.borrow_mut() = true;
+                let cur_probe = draft.borrow().reasoning_effort.clone();
+                crate::bridge::log_diag(&format!("[EFFORT] idx={i} draft={cur_probe}"));
+                // live-draft 守卫：程序化同步会把选中项设为草稿现值的档位，
+                // 回发 index 对应现值时不算用户输入。
+                let cur = normalize_effort(&draft.borrow().reasoning_effort).to_string();
+                match EFFORT_LADDER.get(i as usize) {
+                    Some(e) if *e == cur => return,
+                    Some(e) => {
+                        draft.borrow_mut().reasoning_effort = (*e).to_string();
+                        *dirty.borrow_mut() = true;
+                    }
+                    None => {}
                 }
             }
         })
@@ -410,23 +419,42 @@ pub(crate) fn context_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
             .on_toggled({
                 let draft = draft.clone();
                 let dirty = dirty.clone();
+                let compact_restore = compact_restore.clone();
                 move |on: bool| {
-                    if on == rendered_compact {
+                    crate::bridge::log_diag(&format!(
+                        "[TOGGLE] on={on} draft={:?}",
+                        draft.borrow().auto_compact_threshold
+                    ));
+                    // live-draft 守卫：以草稿现值判定开关态（替代渲染期捕获）。
+                    if on == (draft.borrow().auto_compact_threshold > 0.0) {
                         return;
                     }
-                    let mut d = draft.borrow_mut();
                     if on {
-                        d.auto_compact_threshold = 0.75;
+                        // 恢复最近有效阈值（P0 反馈：关→开不再无条件回落 0.75）；
+                        // 恢复值越界时兜底 0.75。
+                        let restore = *compact_restore.borrow();
+                        draft.borrow_mut().auto_compact_threshold =
+                            if (0.3..=0.95).contains(&restore) {
+                                restore
+                            } else {
+                                0.75
+                            };
                     } else {
-                        d.auto_compact_threshold = 0.0;
+                        draft.borrow_mut().auto_compact_threshold = 0.0;
                     }
                     *dirty.borrow_mut() = true;
                 }
             })
             .into(),
     ));
-    // 压缩禁用（阈值 0）时渲染 0.75：控件回发的值需与"渲染时的值"比对，
-    // 否则禁用态会被静默改回启用（根因 3 同类：程序化同步写回）。
+    // 禁用态渲染 0.75 仅作占位显示；守卫为 live-draft 推导值（同上），
+    // 回发等于推导值或区间外的值一律忽略。
+    crate::bridge::log_diag(&format!(
+        "[CTX-RENDER] d.threshold={:?} d.effort={} restore={:?}",
+        d.auto_compact_threshold,
+        d.reasoning_effort,
+        *ctx.compact_restore.borrow()
+    ));
     let threshold = if d.auto_compact_threshold > 0.0 {
         d.auto_compact_threshold.clamp(0.3, 0.95)
     } else {
@@ -434,19 +462,34 @@ pub(crate) fn context_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
     };
     rows.push(field_row(
         "压缩阈值",
-        Slider::new(threshold)
+        // P0.5：滑杆轨道塌陷渲染为孤点（2026-08-26 截图实证，早期 UI bug），
+        // 换 NumberBox（Compact 旋钮 + 0.05 步进，支持手输）。
+        // 守卫沿用 live-draft 双保险：禁用态短路 + 现值量化比对 + 区间外忽略。
+        NumberBox::new(threshold)
             .range(0.3, 0.95)
-            .step(0.05)
+            .small_change(0.05)
+            .large_change(0.1)
+            .spin_button_placement_mode(1) // 1 = Compact（reactor vendor 补臂）
             .header("")
+            .enabled(rendered_compact)
             .on_value_changed({
                 let draft = draft.clone();
                 let dirty = dirty.clone();
-                let rendered_threshold = threshold;
+                let compact_restore = compact_restore.clone();
                 move |v: f64| {
-                    if (v - rendered_threshold).abs() < f64::EPSILON {
+                    if draft.borrow().auto_compact_threshold <= 0.0 {
+                        return; // 禁用态兜底短路（控件 disabled 的双保险）
+                    }
+                    let cur_raw = draft.borrow().auto_compact_threshold;
+                    let rendered = cur_raw.clamp(0.3, 0.95);
+                    // 量化到 0.05 栅格：旋钮步进天然对齐，手输 0.9333 也归格。
+                    let v = ((v / 0.05).round() * 0.05).clamp(0.3, 0.95);
+                    if (rendered - v).abs() < f64::EPSILON {
                         return;
                     }
                     draft.borrow_mut().auto_compact_threshold = v;
+                    // 记住最近有效阈值，供开关重开时恢复。
+                    *compact_restore.borrow_mut() = v;
                     *dirty.borrow_mut() = true;
                 }
             })
@@ -461,7 +504,9 @@ pub(crate) fn context_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
                 let draft = draft.clone();
                 let dirty = dirty.clone();
                 move |on: bool| {
-                    if on == rendered_compliance {
+                    // live-draft 守卫（同上）：禁用态被程序化同步改回启用时，
+                    // 回发的 on 与草稿现值一致 → 忽略。
+                    if on == draft.borrow().compliance_enabled {
                         return;
                     }
                     draft.borrow_mut().compliance_enabled = on;
@@ -505,7 +550,6 @@ pub(crate) fn subagent_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
             })
             .into(),
     ));
-    let rendered_sub_max = (d.sub_max_tokens as f64).clamp(16.0, 1_000_000.0);
     rows.push(field_row(
         "最大 Tokens",
         NumberBox::new(d.sub_max_tokens as f64)
@@ -515,7 +559,9 @@ pub(crate) fn subagent_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
                 let draft = draft.clone();
                 let dirty = dirty.clone();
                 move |v: f64| {
-                    if (v - rendered_sub_max).abs() < f64::EPSILON {
+                    // live-draft 守卫（见 context_section 注释）。
+                    let cur = (draft.borrow().sub_max_tokens as f64).clamp(16.0, 1_000_000.0);
+                    if (cur - v).abs() < f64::EPSILON || !(16.0..=1_000_000.0).contains(&v) {
                         return;
                     }
                     draft.borrow_mut().sub_max_tokens = v as u64;
@@ -524,7 +570,6 @@ pub(crate) fn subagent_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
             })
             .into(),
     ));
-    let rendered_sub_timeout = (d.sub_timeout_secs as f64).clamp(10.0, 3600.0);
     rows.push(field_row(
         "超时（秒）",
         NumberBox::new(d.sub_timeout_secs as f64)
@@ -534,7 +579,9 @@ pub(crate) fn subagent_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
                 let draft = draft.clone();
                 let dirty = dirty.clone();
                 move |v: f64| {
-                    if (v - rendered_sub_timeout).abs() < f64::EPSILON {
+                    // live-draft 守卫（见 context_section 注释）。
+                    let cur = (draft.borrow().sub_timeout_secs as f64).clamp(10.0, 3600.0);
+                    if (cur - v).abs() < f64::EPSILON || !(10.0..=3600.0).contains(&v) {
                         return;
                     }
                     draft.borrow_mut().sub_timeout_secs = v as u64;
@@ -751,7 +798,7 @@ pub(crate) fn appearance_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
     // 把“内置默认”文案误写入 config。──
     let font_options: Vec<(String, String)> = {
         let mut v = vec![
-            ("内置默认（HarmonyOS Sans SC）".to_string(), String::new()),
+            ("内置默认（MiSans）".to_string(), String::new()),
             (
                 "Windows 系统界面字体".to_string(),
                 fonts::WINDOWS_UI_FONT_FAMILY.to_string(),
@@ -803,7 +850,7 @@ pub(crate) fn appearance_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
         .into(),
     ));
     rows.push(
-        text_block("QAQ-Harness 内置并使用 HarmonyOS Sans SC；代码与数字使用 Cascadia Mono。字体均未修改，完整许可随应用分发。")
+        text_block("QAQ-Harness 内置并使用 MiSans 可变字体（全字重真实渲染）；代码与数字使用 Cascadia Mono。字体均未修改，完整许可随应用分发。")
             .font_size(tokens::TYPE_CAPTION)
             .foreground(ThemeRef::SecondaryText)
             .wrap()

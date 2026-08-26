@@ -208,6 +208,11 @@ impl super::BridgeCore {
                 if matches!(event, ControlEvent::SessionMetaChanged { .. }) {
                     list_changed = true;
                 }
+                // P2-D2：全局配置变更推送（config.save 后 daemon 发布，空 seed）
+                // → 立即重拉权威快照；500ms 轮询降级为兜底。
+                if matches!(event, ControlEvent::ConfigChanged { .. }) {
+                    self.spawn_config_load(true);
+                }
                 // XAML composer goalBar：dashboard_snapshot 携带完整
                 // DashboardSnapshot 载荷（tasks/recent_edits/current_todo_id），
                 // 直接缓存为权威快照（终局架构：Web 移除后 XAML 直消费）。
@@ -289,6 +294,17 @@ impl super::BridgeCore {
                         name, tool_call_id, ..
                     } => {
                         self.set_composer_phase(&batch.seed, WorkPhase::Tool(name.clone()));
+                        // 审批闭环完成（对齐 Web projection 语义）：工具真正
+                        // 开始执行 ⇒ 撤下对应授权面板。daemon 的 LlmResolved
+                        // 恢复路径不发 permission resolved 事件（2026-08-25
+                        // 实证：全仓无发射点），若只等它面板会滞留整个执行期
+                        // ——用户误以为卡顿；HTTP 断则永不落。
+                        self.apply_tool_permission_event(
+                            &batch.seed,
+                            crate::bridge::ToolPermissionEvent::Resolved {
+                                tool_call_id: tool_call_id.clone(),
+                            },
+                        );
                         if name == "spawn_subagent" {
                             // Started 无参数：仅确保实例存在（Prepared 已登记）。
                             self.upsert_subagent(&batch.seed, tool_call_id, None);
@@ -301,6 +317,13 @@ impl super::BridgeCore {
                     } => {
                         // 工具完成 → 回到生成（后续 thinking/answering delta 会覆盖）。
                         self.set_composer_phase(&batch.seed, WorkPhase::Thinking);
+                        // 兜底撤窗（Started 丢失/乱序时 Finished 仍能收尾）。
+                        self.apply_tool_permission_event(
+                            &batch.seed,
+                            crate::bridge::ToolPermissionEvent::Resolved {
+                                tool_call_id: tool_call_id.clone(),
+                            },
+                        );
                         // spawn_subagent 的 Finished 仅确认 spawn 成功，子代理仍在
                         // 后台运行：不销毁 tracker 条目，终态由 [SUBAGENT ...]
                         // 注入 tag 收敛（ToolFinished ≠ 子代理完成）。

@@ -13,7 +13,7 @@ fn log_diag(msg: &str) {
     let _ = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(std::env::var("QAQH_WINUI_LOG").unwrap_or_else(|_| ".deepx-winui.log".into()))
+        .open(std::env::var("QAQH_WINUI_LOG").unwrap_or_else(|_| ".qaqh-winui.log".into()))
         .and_then(|mut f| writeln!(f, "{msg}"));
 }
 

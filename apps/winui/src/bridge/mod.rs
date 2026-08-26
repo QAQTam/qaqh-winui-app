@@ -90,6 +90,8 @@ impl Bridge {
                     settings_rev: AtomicU64::new(0),
                     settings_proj: Mutex::new(SettingsProjection::default()),
                     settings_proj_rev: AtomicU64::new(0),
+                    save_status: Mutex::new(None),
+                    save_status_rev: AtomicU64::new(0),
                     info: Mutex::new(None),
                     info_rev: AtomicU64::new(0),
                     interaction: Mutex::new(InteractionState::default()),
@@ -104,6 +106,7 @@ impl Bridge {
                     // Canonical conversation events are queued for the native
                     // ChatView; no shell projection participates here.
                     timeline_events: Mutex::new(TimelineEventQueues::default()),
+                    composer_drafts: Mutex::new(HashMap::new()),
                     timeline_rev: AtomicU64::new(0),
                     resume_generation: AtomicU64::new(0),
                     chat_timeline: Mutex::new(None),
@@ -208,6 +211,11 @@ impl Bridge {
         self.core.navigate(view, seed);
     }
 
+    /// 当前壳视图名（F-N1：Alt+Left 返回守卫用）。
+    pub fn current_view_name(&self) -> String {
+        self.core.current_view_name()
+    }
+
     // ── XAML 标题栏 STA 能力（header.rs 只依赖 Bridge；①②③ 壳直接处理）──
 
     /// ①workspace：目录选择对话框（STA COM；用户取消返回 Ok(null)）。
@@ -232,9 +240,14 @@ impl Bridge {
         open_external(target)
     }
 
-    /// 标题栏本地开关翻转（headerDirect：info/stats 壳本地维护）。
+    /// 标题栏本地开关翻转（headerDirect：info 壳本地维护）。
     pub fn toggle_header_flag(&self, flag: HeaderFlag) {
         self.core.toggle_header_flag(flag);
+    }
+
+    /// 清除压缩终态（F-N3：重发压缩前重置 / 测试用）。
+    pub fn clear_compact_result(&self, seed: &str) {
+        self.core.clear_compact_result(seed);
     }
 
     // ── 直连动作转发（WebView 移除：协议请求 Rust 直发）──────────────
@@ -472,7 +485,7 @@ pub(crate) fn log_diag(msg: &str) {
     if let Ok(mut f) = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(std::env::var("QAQH_WINUI_LOG").unwrap_or_else(|_| ".deepx-winui.log".into()))
+        .open(std::env::var("QAQH_WINUI_LOG").unwrap_or_else(|_| ".qaqh-winui.log".into()))
     {
         let _ = writeln!(f, "{}", msg);
     }

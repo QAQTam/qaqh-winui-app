@@ -1,8 +1,8 @@
 use windows_reactor::{
     AccessibilityExt, BackgroundExt, ColorScheme, Element, GridChildExt, GridLength,
-    HorizontalAlignment, KeyExt, LayoutExt, PaddingExt, ScrollBarVisibility, TextStyleExt,
-    TextWrapping, ThemeRef, Thickness, VerticalAlignment, border, grid, scroll_viewer, text_block,
-    vstack,
+    HorizontalAlignment, KeyExt, LayoutExt, PaddingExt, RenderCx, ScrollBarVisibility,
+    TextStyleExt, TextWrapping, ThemeRef, Thickness, VerticalAlignment, border, button, component,
+    grid, scroll_viewer, text_block, vstack,
 };
 
 use crate::{CodeBlock, highlighted_code_block};
@@ -684,6 +684,12 @@ fn code_document_view(
 /// 行号列带底色与内容列区分（VS Code 风格）；行高统一、行间 0 间距；
 /// 文本 NoWrap + 横向滚动由外层 scroll_viewer 负责。
 fn unified_diff_row(row: &DiffRow, font_family: &str, index: usize) -> Element {
+    // F-N4 崩溃加固：diff 行来自任意文件字节，先剥掉 XAML 拒收的控制字符。
+    let row_text = crate::sanitize_xaml_text(&row.text);
+    let row = DiffRow {
+        text: row_text,
+        ..row.clone()
+    };
     if row.kind == DiffRowKind::Hunk {
         return border(
             text_block(&row.text)
@@ -785,20 +791,70 @@ fn unified_diff_row(row: &DiffRow, font_family: &str, index: usize) -> Element {
         .into()
 }
 
+/// 单文件 diff 行渲染上限（F-N9）：超过则截断 + 「显示全部」按钮——
+/// 防止模型整文件重写时数千行一次性上树卡死 UI 线程（聊天卡与 drawer 复用）。
+const DIFF_VIEW_MAX_ROWS: usize = 400;
+
+/// 行数窗口纯函数（可测）：返回 (渲染行数, 是否截断)。
+fn diff_rows_window(total_rows: usize, expanded: bool) -> (usize, bool) {
+    if expanded || total_rows <= DIFF_VIEW_MAX_ROWS {
+        (total_rows, false)
+    } else {
+        (DIFF_VIEW_MAX_ROWS, true)
+    }
+}
+
+/// 行堆叠组件（F-N9）：持有 expanded 状态，跨重渲染保持用户的展开选择。
+#[derive(Clone, PartialEq)]
+struct DiffRowsProps {
+    rows: Vec<DiffRow>,
+    font: String,
+}
+
+fn diff_rows_component(props: &DiffRowsProps, cx: &mut RenderCx) -> Element {
+    let total = props.rows.len();
+    let (expanded, set_expanded) = cx.use_state::<bool>(false);
+    let (count, truncated) = diff_rows_window(total, expanded);
+    let mut items: Vec<Element> = props.rows[..count]
+        .iter()
+        .enumerate()
+        .map(|(index, row)| unified_diff_row(row, &props.font, index))
+        .collect();
+    if truncated {
+        items.push(
+            border(text_block(format!(
+                "⋯ 已折叠其余 {} 行（大文件保护）",
+                total - count
+            )))
+            .padding(Thickness::xy(8.0, 4.0))
+            .into(),
+        );
+        items.push(
+            button(format!("显示全部 {total} 行"))
+                .on_click({
+                    let set = set_expanded.clone();
+                    move || set.call(true)
+                })
+                .into(),
+        );
+    }
+    vstack(items).spacing(0.0).into()
+}
+
 /// 单列文件视图：header（路径 + ±N）+ 紧凑行堆叠（NoWrap + 横纵滚动）。
 /// pub：diff 抽屉等外部视图复用（传入 `font_family` 与稳定 `key`）。
 pub fn diff_file_view(file: &DiffFile, font_family: &str, key: &str) -> Element {
     let font = font_family.to_string();
-    let rows = scroll_viewer(
-        vstack(
-            file.rows
-                .iter()
-                .enumerate()
-                .map(|(index, row)| unified_diff_row(row, &font, index))
-                .collect::<Vec<_>>(),
-        )
-        .spacing(0.0),
+    // F-N9：行走组件（截断 + 展开按钮），不再全量急切上树。
+    let rows_elem = component(
+        diff_rows_component,
+        DiffRowsProps {
+            rows: file.rows.clone(),
+            font: font.clone(),
+        },
     )
+    .with_key(format!("{key}-rows"));
+    let rows = scroll_viewer(rows_elem)
     .horizontal_scroll_bar_visibility(ScrollBarVisibility::Disabled)
     .vertical_scroll_bar_visibility(ScrollBarVisibility::Auto)
     .max_height(520.0);
@@ -861,6 +917,19 @@ fn diff_document_view(document: &DiffDocument, font_family: &str, key: &str) -> 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn diff_rows_window_caps_and_expands() {
+        assert_eq!(diff_rows_window(50, false), (50, false));
+        // 恰好等于上限：不截断（无需展开按钮）。
+        assert_eq!(
+            diff_rows_window(400, false),
+            (400, false)
+        );
+        // 超限折叠；展开后全量。
+        assert_eq!(diff_rows_window(500, false), (400, true));
+        assert_eq!(diff_rows_window(500, true), (500, false));
+    }
+
     use super::*;
 
     /// 同路径 diff 块合并：多 op 编辑同一文件 → 单文件块（rows + 统计）。

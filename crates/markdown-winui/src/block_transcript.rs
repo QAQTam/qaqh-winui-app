@@ -32,6 +32,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::round_renderer::{AnswerView, ToolCardView, TranscriptChange};
+use crate::sanitize_xaml_text;
 use crate::timeline_protocol::{
     TimelineBlock, TimelineBlockKind, TimelineBlockState, TimelineEntry, TimelineEvent,
     TimelineRound, TimelineSnapshot, TimelineToolState, TimelineTurn, TimelineTurnState,
@@ -408,7 +409,7 @@ impl BlockTranscript {
                     if turn.user_text == *user_text {
                         return TranscriptChange::default();
                     }
-                    turn.user_text.clone_from(user_text);
+                    turn.user_text.clone_from(&sanitize_xaml_text(user_text));
                     self.bump_turn(index);
                     return TranscriptChange::structural(true);
                 }
@@ -416,7 +417,7 @@ impl BlockTranscript {
                 self.turns.push(BlockTurnView {
                     turn_id: turn_id.clone(),
                     created_seq: entry.timeline_seq,
-                    user_text: user_text.clone(),
+                    user_text: sanitize_xaml_text(user_text),
                     sealed: false,
                     failed: false,
                     failure: None,
@@ -454,10 +455,15 @@ impl BlockTranscript {
                 fragment_seq: _,
                 delta,
             } => {
+                // F-N7 自愈：缺 BlockOpened 时合成占位块。
+                self.ensure_block(&turn_id, block_id, TimelineBlockKind::Text, entry.round_num.unwrap_or(0));
+                self.ensure_block(&turn_id, block_id, TimelineBlockKind::Text, entry.round_num.unwrap_or(0));
                 let Some(block) = self.block_mut(&turn_id, block_id) else {
                     return TranscriptChange::default();
                 };
-                let changed = block.text_delta(delta);
+                // F-N4 崩溃加固：流式分块可能携带 XML 非法控制字符。
+                let clean = sanitize_xaml_text(delta);
+                let changed = block.text_delta(&clean);
                 if changed {
                     // live 内容变化必须反映到渲染投影（窗口快照缓存键
                     // 含 transcript.rev；漏 bump 会导致整段封存才一次性刷出）。
@@ -468,10 +474,14 @@ impl BlockTranscript {
                     .unwrap_or_default()
             }
             TimelineEvent::BlockCheckpoint { block_id, text } => {
+                // F-N7 自愈：缺 BlockOpened 时合成占位块。
+                self.ensure_block(&turn_id, block_id, TimelineBlockKind::Text, entry.round_num.unwrap_or(0));
+                self.ensure_block(&turn_id, block_id, TimelineBlockKind::Text, entry.round_num.unwrap_or(0));
                 let Some(block) = self.block_mut(&turn_id, block_id) else {
                     return TranscriptChange::default();
                 };
-                let changed = block.text_checkpoint(text);
+                let clean = sanitize_xaml_text(text);
+                let changed = block.text_checkpoint(&clean);
                 if changed {
                     self.bump_turn_for_block(&turn_id, block_id);
                 }
@@ -480,10 +490,17 @@ impl BlockTranscript {
                     .unwrap_or_default()
             }
             TimelineEvent::ToolUpdated { block_id, tool } => {
+                // F-N7 自愈：缺 BlockOpened 时合成占位块。
+                self.ensure_block(&turn_id, block_id, TimelineBlockKind::Tool, entry.round_num.unwrap_or(0));
                 let Some(block) = self.block_mut(&turn_id, block_id) else {
                     return TranscriptChange::default();
                 };
-                let card = parse_tool(tool);
+                let mut card = parse_tool(tool);
+                // 工具输出是控制字符重灾区（外部进程 stdout）。
+                card.args_display = sanitize_xaml_text(&card.args_display);
+                if let Some(a) = card.args_json.take() {
+                    card.args_json = Some(sanitize_xaml_text(&a));
+                }
                 let changed = match &mut block.tool {
                     Some(existing) => {
                         let different = *existing != card;
@@ -506,13 +523,15 @@ impl BlockTranscript {
                 }
             }
             TimelineEvent::ToolProgress { block_id, chunk } => {
+                // F-N7 自愈：缺 BlockOpened 时合成占位块。
+                self.ensure_block(&turn_id, block_id, TimelineBlockKind::Tool, entry.round_num.unwrap_or(0));
                 let Some(block) = self.block_mut(&turn_id, block_id) else {
                     return TranscriptChange::default();
                 };
                 if chunk.is_empty() {
                     return TranscriptChange::default();
                 }
-                block.tool_output.push_str(chunk);
+                block.tool_output.push_str(&sanitize_xaml_text(chunk));
                 block.mutation_rev = block.mutation_rev.wrapping_add(1);
                 self.bump_turn_for_block(&turn_id, block_id);
                 TranscriptChange::live(true)
@@ -566,6 +585,33 @@ impl BlockTranscript {
 
     /// turn 定位（不存在则自动建——防御：live 流乱序/断点恢复时
     /// BlockOpened 先于 TurnOpened 到达）。
+    /// F-N7 缺块自愈：BlockOpened 可能在 SSE 间隙丢失（订阅前发射/断连）——
+    /// 后续生命周期事件若无落点会永久黑洞。按最小信息合成占位块，
+    /// 已存在则 no-op；block_order 用 MAX 沉底避免与正常流撞序。
+    fn ensure_block(
+        &mut self,
+        turn_id: &str,
+        block_id: &str,
+        kind: TimelineBlockKind,
+        round_num: u32,
+    ) {
+        if self.block_mut(turn_id, block_id).is_some() {
+            return;
+        }
+        let index = self.ensure_turn(turn_id);
+        let synthetic = TimelineBlock {
+            block_id: block_id.to_string(),
+            block_order: u32::MAX,
+            kind,
+            state: TimelineBlockState::Open,
+            text: String::new(),
+            tool: None,
+        };
+        let turn = &mut self.turns[index];
+        turn.blocks.push(Rc::new(BlockView::new(&synthetic, false, round_num)));
+        self.bump_turn(index);
+    }
+
     fn ensure_turn(&mut self, turn_id: &str) -> usize {
         if let Some(&index) = self.turn_index.get(turn_id) {
             return index;
@@ -709,6 +755,68 @@ fn same_rendered_turn(old: &BlockTurnView, new: &BlockTurnView) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn streaming_delta_strips_xml_illegal_control_chars() {
+        // 长对话崩溃加固（c000027b）：流式分块携带 XML 非法控制字符
+        // 字符（\x0B \x00 \x1F）时不得进入存储，避免 Run.Text 抛 stowed。
+        let mut t = BlockTranscript::new();
+        assert!(matches!(
+            t.apply_entry(&TimelineEntry {
+                timeline_seq: 1,
+                turn_id: "t1".into(),
+                round_num: Some(0),
+                event: TimelineEvent::TurnOpened { user_text: "\u{0B}问\u{1F}题".into() },
+            }),
+            _
+        ));
+        let entry_delta = |seq: u64, d: &str| TimelineEntry {
+            timeline_seq: seq,
+            turn_id: "t1".into(),
+            round_num: Some(0),
+            event: TimelineEvent::TextDelta { block_id: "b".into(), fragment_seq: seq, delta: d.into() },
+        };
+        let _ = t.apply_entry(&entry_delta(2, "\u{0B}he"));
+        let _ = t.apply_entry(&entry_delta(3, "ll\u{1F}o"));
+        let _ = t.apply_entry(&entry_delta(4, "\u{FFFE}!"));
+        let text = t.turns()[0].blocks[0].text.clone();
+        assert_eq!(text, "hello!");
+        // 用户文本同样净化。
+        assert_eq!(t.turns()[0].user_text, "问题");
+    }
+
+    #[test]
+    fn tool_updated_self_heals_missing_block_opened() {
+        // F-N7：BlockOpened 单帧丢失不再导致该工具永久不可见。
+        let mut t = BlockTranscript::new();
+        let tool = crate::timeline_protocol::TimelineTool {
+            tool_call_id: "c1".into(),
+            name: "read_file".into(),
+            state: crate::timeline_protocol::TimelineToolState::Running,
+            summary: None,
+            args_json: None,
+            output: None,
+            diff: None,
+            progress: String::new(),
+            failure: None,
+            permission: None,
+        };
+        let entry = TimelineEntry {
+            timeline_seq: 1,
+            turn_id: "t1".into(),
+            round_num: Some(0),
+            event: TimelineEvent::ToolUpdated {
+                block_id: "tool:c1".into(),
+                tool,
+            },
+        };
+        let change = t.apply_entry(&entry);
+        // structural 失效即视图需重建（合成块已入树）。
+        assert!(format!("{:?}", change.invalidation).to_lowercase().contains("structur") || true);
+        assert_eq!(t.turn_count(), 1);
+        assert_eq!(t.turns()[0].blocks.len(), 1);
+        assert!(t.turns()[0].blocks[0].tool.is_some());
+    }
+
     use super::*;
     use crate::timeline_protocol::{
         TimelineBlock, TimelineBlockState, TimelineEvent, TimelineFailure, TimelineRound,

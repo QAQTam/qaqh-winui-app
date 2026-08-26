@@ -1,10 +1,13 @@
-DeepX includes the following unmodified font software.
+QAQ-Harness includes the following unmodified font software.
 
-HarmonyOS Sans SC
-Copyright 2021 Huawei Device Co., Ltd.
+MiSans VF (variable font, wght 150-700)
+Copyright 2021 - Present, Xiaomi Inc.
 Used as the default Simplified Chinese and application UI font.
-Licensed under the HarmonyOS Sans Fonts License Agreement. The complete
-license is distributed as HARMONYOS_SANS_LICENSE.txt in this directory.
+Licensed under the MiSans Font License (free for commercial and
+personal use; the font file itself may not be redistributed or sold
+separately, but works bundling it unmodified are permitted). The full
+official license text is distributed as MISANS_LICENSE.txt in this
+directory, published at https://hyperos.mi.com/font-download.
 
 Cascadia Mono 2407.24
 Copyright (c) 2019 - Present, Microsoft Corporation.

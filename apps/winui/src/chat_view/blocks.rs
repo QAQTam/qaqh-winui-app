@@ -6,7 +6,7 @@ use markdown_winui::{
 use qaqh_fluent::{motion, tokens};
 use windows_reactor::*;
 
-use super::tools::{is_file_mutation, is_readonly, tool_row};
+use super::tools::{tool_row, tool_row_visible};
 use super::zoom::zoom_request_callback;
 
 /// block 级 memo：block_id + mutation_rev 等价判据（live delta 只重建
@@ -55,16 +55,11 @@ fn block_view(props: &BlockProps, cx: &mut RenderCx) -> Element {
                 provider: false,
                 started: true,
             });
-            // 工具行可见性（V4-E 空间回收）：
-            // 1) Prepared 预览（LLM 刚吐出、未真正执行）不渲染——
-            //    ToolStarted（state=Running）后才显示转圈；
-            // 2) 文件修改类工具**成功**完成态不渲染（「已修改 N 个文件」
-            //    diff 汇总卡片承担；失败态无 diff 数据，保留 ✕ 错误行）；
-            // 3) 只读/搜索类工具（read/grep/list/web_search）完成即回收
-            //    ——高频调用不占空间（工具频繁场景的核心压缩手段）。
-            if (!card.started && !card.done)
-                || (card.done && !card.failed && (is_file_mutation(&card) || is_readonly(&card)))
-            {
+            // 工具行可见性：Prepared 预览（LLM 刚吐出、未真正执行）不渲染，
+            // 其余状态一律保留——V4-E「完成即回收」策略废除（F-N6，用户
+            // 决定 2026-08-24）：read/grep/write/edit 完成态也显示 ✓ 行；
+            // 文件修改类的「已修改 N 个文件」diff 汇总卡照旧叠加。
+            if !tool_row_visible(&card) {
                 return Element::Empty;
             }
             tool_row(
@@ -298,14 +293,12 @@ fn final_view(
     color_scheme: ColorScheme,
 ) -> Element {
     let mut items: Vec<Element> = Vec::new();
-    // 连续段落累积；遇 Table/Code flush 成 RichTextBlock。
-    let mut pending: Vec<RichTextParagraph> = Vec::new();
-    let flush = |items: &mut Vec<Element>, pending: &mut Vec<RichTextParagraph>| {
-        if pending.is_empty() {
-            return;
-        }
+    // 段落级渲染：每段独立 RichTextBlock，间距统一走 vstack（web 式等距，
+    // 对齐 marked→HTML→CSS 的均匀 margin 模型）。此前多段合入单个
+    // RichTextBlock 时 XAML Paragraph 无 Margin 通道，段间距恒为 0。
+    let make_block = |paragraphs: Vec<RichTextParagraph>| {
         let mut rt = RichTextBlock::new();
-        rt.paragraphs = std::mem::take(pending);
+        rt.paragraphs = paragraphs;
         rt.font_size = Some(tokens::TYPE_BODY);
         rt.line_height = Some(tokens::TYPE_BODY_LINE_HEIGHT);
         rt.text_wrapping = TextWrapping::Wrap;
@@ -313,14 +306,32 @@ fn final_view(
         // RichTextBlock 不参与 XAML 字体属性继承（host 全局字体只覆盖
         // TextBlock 系），必须显式指定 UI 字体，否则 fallback 系统字体。
         rt.modifiers.font_family = Some(tokens::DEFAULT_UI_FONT_FAMILY.to_string());
-        items.push(rt.into());
+        rt
     };
     if !rich.blocks.is_empty() {
         for b in &rich.blocks {
             match b {
-                markdown_winui::FinalBlock::Paragraph(p) => pending.push(p.clone()),
+                markdown_winui::FinalBlock::Paragraph(p) => {
+                    items.push(make_block(vec![p.clone()]).into());
+                }
+                markdown_winui::FinalBlock::Heading { level, paragraph } => {
+                    // 论文式层级：段前 > 段后。vstack 基础间距 SPACE_2(8) 充当
+                    // 段后距，标题顶边距叠加出段前层次：h1 8+8=16 / h2 6+8=14 /
+                    // h3+ 4+8=12（正文段间 8）。
+                    let top = match level {
+                        1 => tokens::SPACE_2,
+                        2 => 6.0,
+                        _ => 4.0,
+                    };
+                    let el: Element = make_block(vec![paragraph.clone()]).into();
+                    items.push(el.margin(Thickness {
+                        left: 0.0,
+                        top,
+                        right: 0.0,
+                        bottom: 0.0,
+                    }));
+                }
                 markdown_winui::FinalBlock::Table(td) => {
-                    flush(&mut items, &mut pending);
                     items.push(markdown_winui::table_view(
                         td,
                         &format!("{turn_id}-r{round_num}-table-{n}", n = items.len()),
@@ -328,7 +339,6 @@ fn final_view(
                     ));
                 }
                 markdown_winui::FinalBlock::Code(code) => {
-                    flush(&mut items, &mut pending);
                     let highlighted = markdown_winui::highlighted_code_block(
                         code,
                         color_scheme,
@@ -341,7 +351,6 @@ fn final_view(
                     ));
                 }
                 markdown_winui::FinalBlock::Diagram(diagram) => {
-                    flush(&mut items, &mut pending);
                     let key = format!("{turn_id}-r{round_num}-diagram-{n}", n = items.len());
                     items.push(markdown_winui::diagram_view(
                         diagram,
@@ -352,7 +361,6 @@ fn final_view(
                 }
             }
         }
-        flush(&mut items, &mut pending);
     } else {
         // 降级路径（blocks 为空的历史数据）：按通道渲染，保底不空白。
         let mut rt = RichTextBlock::new();
@@ -395,7 +403,7 @@ fn final_view(
         }
     }
     vstack(items)
-        .spacing(tokens::SPACE_3)
+        .spacing(tokens::SPACE_2)
         .transition(motion::content_enter(), None)
         .with_key(format!("{turn_id}-r{round_num}-final"))
         .into()

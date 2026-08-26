@@ -51,10 +51,6 @@ fn oobe_component(props: &SetState<bool>, cx: &mut RenderCx) -> Element {
     oobe_view::oobe_view(cx, props.clone())
 }
 
-fn sidebar_component(props: &(f64, SetState<f64>), cx: &mut RenderCx) -> Element {
-    sidebar::sidebar(cx, bridge::Bridge::shared(), props.0, props.1.clone()).into()
-}
-
 fn session_tabs_component(_: &(), cx: &mut RenderCx) -> Element {
     session_tabs::session_tabs(cx, bridge::Bridge::shared())
 }
@@ -79,8 +75,12 @@ fn skills_component(_: &(), cx: &mut RenderCx) -> Element {
     skills_view::skills_view(cx, bridge::Bridge::shared())
 }
 
-fn settings_component(_: &(), cx: &mut RenderCx) -> Element {
-    settings_view::settings_view(cx, bridge::Bridge::shared())
+fn settings_component(props: &String, cx: &mut RenderCx) -> Element {
+    settings_view::settings_view(cx, bridge::Bridge::shared(), props.clone())
+}
+
+fn history_dialog_component(props: &SetState<bool>, cx: &mut RenderCx) -> Element {
+    sidebar::history_dialog(cx, bridge::Bridge::shared(), props.clone()).into()
 }
 
 fn interaction_component(_: &(), cx: &mut RenderCx) -> Element {
@@ -103,8 +103,6 @@ fn app(cx: &mut RenderCx) -> Element {
     let bridge = bridge::Bridge::shared();
     // 单一 50ms UI 泵（T15 收敛）：bridge.pump 热循环 + 门控粗粒度检查。
     let ui_timer = cx.use_ref::<Option<DispatcherTimer>>(None);
-    // 侧栏宽度：可拖拽（splitter），双击抓握条恢复默认。
-    let (sidebar_width, set_sidebar_width) = cx.use_state::<f64>(sidebar::SIDEBAR_DEFAULT_WIDTH);
 
     // ── 启动即拉配置（Bug#2 修复）──────────────────────────────
     // 此前 config.load 只在设置页/OOBE/「刷新」按钮触发：老用户启动后
@@ -127,15 +125,18 @@ fn app(cx: &mut RenderCx) -> Element {
     //   - row3 = XAML 设置页（P2）——view=settings 时 STAR。
     // 非当前视图不仅行高 0，还不声明对应 Component：子树直接卸载，
     // use_effect cleanup/drop 停止 timer/on_frame。
-    let nav: Element = component(
-        sidebar_component,
-        (sidebar_width, set_sidebar_width.clone()),
-    )
-    .with_key("shell-sidebar");
+    // 侧栏 pane 折叠状态（原生 NavigationView 自管汉堡键/动效），记住上次。
+    let (pane_open, set_pane_open) = cx.use_state::<bool>(sidebar::load_pane_open());
+    // Settings 分类：左栏（Settings 模式）与 settings_view 共享的单一事实源。
+    let (settings_category, set_settings_category) = cx.use_state::<String>("models".to_string());
+    // 返回键目标：最近一次非 settings 视图（进入设置前所在栏）。
+    let prev_non_settings = cx.use_ref::<String>("chat".to_string());
     let (view, set_view) = cx.use_state::<String>("home".to_string());
     let (_, set_info_open) = cx.use_state::<bool>(false);
     let last_view = cx.use_ref::<String>("home".to_string());
     let last_info_open = cx.use_ref::<bool>(false);
+    // 历史会话弹层开关（左栏「历史」条目触发；ContentDialog 承载）。
+    let (history_open, set_history_open) = cx.use_state::<bool>(false);
 
     // ── 字体：settings 快照到达/变化时全局应用（FontFamily 为继承属性，
     // 设置内容根一次即全树生效；空 = 恢复系统默认）。常驻轮询保证
@@ -177,7 +178,7 @@ fn app(cx: &mut RenderCx) -> Element {
         Element::Empty
     };
     let settings: Element = if view == "settings" {
-        grid((component(settings_component, ()).with_key("shell-settings"),))
+        grid((component(settings_component, settings_category.clone()).with_key("shell-settings"),))
             .with_key("shell-settings-wrap")
             .rows([GridLength::STAR])
             .columns([GridLength::STAR])
@@ -331,6 +332,7 @@ fn app(cx: &mut RenderCx) -> Element {
         let last_theme = last_theme.clone();
         let last_sync = last_sync.clone();
         let last_slow = last_slow.clone();
+        let prev_non_settings = prev_non_settings.clone();
         let oobe_auto = oobe_auto.clone();
         let splash_started = splash_started.clone();
         let splash_done = splash_done.clone();
@@ -353,6 +355,10 @@ fn app(cx: &mut RenderCx) -> Element {
 
                         let v = bridge.core().current_view();
                         if v != *last_view.borrow() {
+                            // 返回键目标：非 settings 视图持续记为「来路」。
+                            if v != "settings" {
+                                *prev_non_settings.borrow_mut() = v.clone();
+                            }
                             *last_view.borrow_mut() = v.clone();
                             set_view.call(v.clone());
                         }
@@ -461,17 +467,60 @@ fn app(cx: &mut RenderCx) -> Element {
         .with_key("shell-header")
         .grid_row(0)
         .grid_column(0);
-    // ── 内容区（row 1）：侧栏 | 文档工作区（标签条 + 视图）──────
-    // P-6 覆盖层预留（WORKFLOW §6.1）：未来 XAML 面板/对话框
-    // （P1 Flyout anchor / P2 ContentDialog phantom child）作为覆盖层
-    // 元素追加进本 Grid（同 cell 重叠渲染），零布局改动。
-    let content: Element = grid((nav.grid_column(0), right))
-        .columns([GridLength::Pixel(sidebar_width), GridLength::STAR])
-        .rows([GridLength::STAR])
+    // ── 全局 NavigationView 壳（原生控件：选中动效/折叠/回弹全套）──
+    // 主模式 items = 主页/聊天/技能/历史/设置；Settings 模式 items =
+    // 九分类（原地替换，零嵌套）。content 恒为右区（标签条 + 视图族）。
+    // 分类导航移交左栏后 settings_view 不再内嵌 NavigationView。
+    let nav_items = sidebar::build_nav_items(&view, &settings_category);
+    let selected_tag = if view == "settings" {
+        settings_category.clone()
+    } else {
+        view.clone()
+    };
+    let in_settings = view == "settings";
+    let shell_nav: Element = NavigationView::new(nav_items, right)
+        .selected_tag(selected_tag)
+        .on_selection_changed({
+            let bridge = bridge.clone();
+            let set_settings_category = set_settings_category.clone();
+            let set_history_open = set_history_open.clone();
+            move |tag: String| {
+                if bridge.current_view_name() == "settings" {
+                    // Settings 模式：tag = 分类 id，只切 section 不动路由。
+                    set_settings_category.call(tag);
+                } else if tag == "history" {
+                    set_history_open.call(true);
+                } else {
+                    bridge.navigate(&tag, None);
+                }
+            }
+        })
+        .pane_display_mode(NavigationViewPaneDisplayMode::Left)
+        .pane_open(pane_open)
+        .on_pane_open_changed({
+            let set_pane_open = set_pane_open.clone();
+            move |open: bool| {
+                set_pane_open.call(open);
+                sidebar::store_pane_open(open);
+            }
+        })
+        .pane_toggle_button_visible(true)
+        .back_button_visible(in_settings)
+        .back_enabled(in_settings)
+        .on_back_requested({
+            let bridge = bridge.clone();
+            let prev_non_settings = prev_non_settings.clone();
+            move || {
+                let prev = prev_non_settings.borrow().clone();
+                bridge.navigate(&prev, None);
+            }
+        })
+        .settings_visible(false)
+        .open_pane_length(240.0)
         .grid_row(1)
         .grid_column(0)
         .into();
-    let base: Element = grid((titlebar, content))
+    let base: Element = grid((titlebar, shell_nav))
         .rows([GridLength::Pixel(header::HEADER_HEIGHT), GridLength::STAR])
         .columns([GridLength::STAR])
         .into();
@@ -520,11 +569,17 @@ fn app(cx: &mut RenderCx) -> Element {
     // diagram_zoom / diff_drawer **之后**——否则 diff 面板/图表放大打开时其
     // 全屏遮罩会盖住 ask 面板（「ask 弹不出来」根因，2026-08-12 实测定位）。
     // 模态互斥时 agent 交互优先：即使 diff 面板开着，ask 也应弹在最上层。
+    let history_dialog_el: Element = if history_open {
+        component(history_dialog_component, set_history_open.clone()).with_key("shell-history")
+    } else {
+        grid(()).into()
+    };
     grid((
         base,
         splash,
         diagram_zoom,
         diff_drawer,
+        history_dialog_el,
         remote_picker,
         interaction,
         oobe,
@@ -540,7 +595,7 @@ fn log_diag(msg: &str) {
     if let Ok(mut f) = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(std::env::var("QAQH_WINUI_LOG").unwrap_or_else(|_| ".deepx-winui.log".into()))
+        .open(std::env::var("QAQH_WINUI_LOG").unwrap_or_else(|_| ".qaqh-winui.log".into()))
     {
         let _ = writeln!(f, "{}", msg);
     }

@@ -42,14 +42,25 @@ pub fn composer_bar(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
         let set_state = set_state.clone();
         let timer = timer.clone();
         let last_rev = last_rev.clone();
+        let draft_mirror = draft.clone();
         move || {
+            let fetch_bridge = bridge.clone();
+            let apply_bridge = bridge.clone();
             crate::shell::poll_rev(
                 "composer",
                 timer,
                 last_rev,
                 POLL_INTERVAL,
-                move || bridge.core().composer_snapshot(),
-                move |s| set_state.call(s),
+                move || fetch_bridge.core().composer_snapshot(),
+                move |s| {
+                    // F-N4 写穿镜像：心跳把当前草稿同步到 bridge 持久层，
+                    // 页面卸载（use_ref 销毁）最多丢最后 250ms 输入而非全部。
+                    if !s.seed.is_empty() {
+                        let snap = draft_mirror.borrow().clone();
+                        apply_bridge.core().save_draft(&s.seed, snap);
+                    }
+                    set_state.call(s);
+                },
             );
         }
     });
@@ -78,6 +89,7 @@ pub fn composer_bar(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
     let ack0 = state.send_ack;
     let seed0 = state.seed.clone();
     cx.use_effect((ack0, seed0.clone()), {
+        let bridge = bridge.clone();
         let draft = draft.clone();
         let draft_ver = draft_ver.clone();
         let last_ack = last_ack.clone();
@@ -89,26 +101,47 @@ pub fn composer_bar(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
             if ack != *last_ack.borrow() {
                 *last_ack.borrow_mut() = ack;
                 if ack > 0 {
-                    let mut d = draft.borrow_mut();
-                    for att in &d.attachments {
-                        remove_preview(att.preview_path.as_deref());
+                    {
+                        let mut d = draft.borrow_mut();
+                        for att in &d.attachments {
+                            remove_preview(att.preview_path.as_deref());
+                        }
+                        d.text.clear();
+                        d.attachments.clear();
                     }
-                    d.text.clear();
-                    d.attachments.clear();
+                    // F-N4：持久层同步清空（防卸载后从存档复活旧文本）。
+                    let cleared = draft.borrow().clone();
+                    bridge.core().save_draft(&seed, cleared);
                     log_diag("sendAck: draft cleared");
                 }
             }
             if seed != *last_seed.borrow() {
-                *last_seed.borrow_mut() = seed;
-                let mut d = draft.borrow_mut();
-                for att in &d.attachments {
-                    remove_preview(att.preview_path.as_deref());
+                // F-N4 存旧取新：切走前保存旧会话草稿；切入时恢复目标草稿
+                // （无存档则空白，对齐 Web 新会话语义）。预览临时文件随条目
+                // 存活，仅在发送清空/容量逐出时删除。
+                let prev = last_seed.borrow().clone();
+                if !prev.is_empty() && prev != seed {
+                    let snap = draft.borrow().clone();
+                    bridge.core().save_draft(&prev, snap);
                 }
-                d.text.clear();
-                d.attachments.clear();
-                d.selected_slash = 0;
-                d.dismissed_slash = None;
-                log_diag("seed changed: draft reset");
+                let restored = bridge.core().take_draft(&seed);
+                {
+                    let mut d = draft.borrow_mut();
+                    match restored {
+                        Some(r) => *d = r,
+                        None => {
+                            for att in &d.attachments {
+                                remove_preview(att.preview_path.as_deref());
+                            }
+                            d.text.clear();
+                            d.attachments.clear();
+                            d.selected_slash = 0;
+                            d.dismissed_slash = None;
+                        }
+                    }
+                }
+                *last_seed.borrow_mut() = seed;
+                log_diag("seed changed: draft swapped");
             }
             let v = *draft_ver.borrow() + 1;
             *draft_ver.borrow_mut() = v;
@@ -677,12 +710,49 @@ pub fn composer_bar(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
         })
         .into();
 
+    // 工作区 chip（footer STAR 列）：显示活动会话 meta.cwd（后端持久源，
+    // 重启安全；无会话/未设置时占位文案）。点击 → 系统选目录 → 有活动会话
+    // 走 workspace.set（粘性写 meta.cwd + 自动归属），无会话走
+    // workspace.create + 选中（作为下个新会话 SessionCreate 携带的 cwd）。
+    // 工作区设置唯一入口（原顶部按钮已移除，标签栏不做过滤）。
+    let cwd_display = state.cwd.clone();
+    let cwd_label = cwd_display
+        .as_deref()
+        .map(short_cwd)
+        .unwrap_or_else(|| "选择工作目录".to_string());
+    let workspace_chip: Element = button(cwd_label)
+        .icon(Icon::symbol(Symbol::Folder))
+        .subtle()
+        .tooltip(cwd_display.as_deref().unwrap_or("选择会话工作目录"))
+        .automation_name("工作区")
+        .automation_id("composer-workspace")
+        .on_click({
+            let bridge = bridge.clone();
+            move || match bridge.pick_workspace_directory() {
+                Ok(serde_json::Value::String(path)) => {
+                    // 空 path 防护：永不向 daemon 发空 cwd（后端已拒绝，
+                    // 这里同步拦截，避免无意义往返）。
+                    if path.trim().is_empty() {
+                        return;
+                    }
+                    if !bridge.core().active_seed().is_empty() {
+                        bridge.spawn_workspace_set(path);
+                    } else {
+                        bridge.spawn_workspace_create(path);
+                    }
+                }
+                _ => {}
+            }
+        })
+        .into();
+
     // Grid provides real left/right command groups. A horizontal StackPanel
     // cannot emulate a web flex spacer because it measures children at infinity.
     let footer: Element = grid((
         attach_button.grid_column(0),
         tool_mode_picker.grid_column(1),
         mode_button.grid_column(2),
+        workspace_chip.grid_column(4),
         immersive_button.grid_column(3),
         hstack((permission_picker,))
             .spacing(tokens::SPACE_2)

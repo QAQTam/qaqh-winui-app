@@ -1,0 +1,480 @@
+[INTERACT] t=1787637048958 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787637048958 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787637048958 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787637048959 refresh active=seed1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787637048958 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787637048958 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787637048958 refresh active=seed1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787637048958 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787637048958 refresh active=seed1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787637048958 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+
+
+health: all ringing channels stalled, rebuilding client
+[INTERACT] t=1787637048959 refresh active=seedB hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787637048959 applied ev=AskRequested ev_seed=seedA active_seed= machines=["seedA"]
+[INTERACT] t=1787637048959 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"][INTERACT] t=1787637048959 refresh active=seedB hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787637048959 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+
+
+[INTERACT] t=1787637048959 refresh active=seedC hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787637048960 refresh active= hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787637048960 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0
+[INTERACT] t=1787637048960 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0[INTERACT] t=1787637048960 refresh active=s1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787637048960 refresh active=sA hit=false next_kind= cur_kind= rev=0
+
+
+[INTERACT] t=1787637048960 refresh active=sA hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787637048960 refresh active=seedA hit=true next_kind=ask cur_kind= rev=0health: timeline stream stalled, rebuilding client
+
+health: timeline stream stalled, rebuilding client
+
+[INTERACT] t=1787637048960 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"][INTERACT] t=1787637048960 refresh active=sB hit=false next_kind= cur_kind= rev=0
+resume s1: already active, re-navigate only
+
+[INTERACT] t=1787637048961 refresh active=sB hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787637048961 applied ev=AskRequested ev_seed=seedB active_seed=seedA machines=["seedB", "seedA"]
+
+[INTERACT] t=1787637048961 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787637048961 refresh active=sA hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787637048961 refresh active=seedB hit=true next_kind=ask cur_kind=ask rev=1
+
+resume s1: already active, re-navigate only
+[INTERACT] t=1787637048961 refresh active=seedA hit=true next_kind=ask cur_kind=ask rev=2
+[INTERACT] t=1787637048961 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+data root marker: product "OtherApp" not recognized; migration skipped
+data root marker: migrated legacy DeepX marker to QAQ-Harness
+data root marker: DeepX marker belongs to another dir/user; migration skipped
+[INTERACT] t=1787637291754 refresh active=seed1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787637291754 refresh active=seed1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787637291754 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787637291754 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787637291754 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787637291754 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787637291754 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787637291754 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787637291754 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+health: all ringing channels stalled, rebuilding client
+
+[INTERACT] t=1787637291754 refresh active=seed1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787637291755 applied ev=AskRequested ev_seed=seedA active_seed= machines=["seedA"]
+
+[INTERACT] t=1787637291755 refresh active=seedB hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787637291755 refresh active=seedB hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787637291755 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+
+
+[INTERACT] t=1787637291755 refresh active= hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787637291755 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+
+[INTERACT] t=1787637291755 refresh active=seedC hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787637291755 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0
+
+[INTERACT] t=1787637291755 refresh active=seedA hit=true next_kind=ask cur_kind= rev=0
+[INTERACT] t=1787637291756 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0
+[INTERACT] t=1787637291756 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+[INTERACT] t=1787637291756 applied ev=AskRequested ev_seed=seedB active_seed=seedA machines=["seedA", "seedB"]
+[INTERACT] t=1787637291756 refresh active=seedB hit=true next_kind=ask cur_kind=ask rev=1
+[INTERACT] t=1787637291756 refresh active=seedA hit=true next_kind=ask cur_kind=ask rev=2
+[INTERACT] t=1787637291756 refresh active=s1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787637291756 refresh active=sA hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787637291756 refresh active=sA hit=false next_kind= cur_kind= rev=0
+resume s1: already active, re-navigate only
+health: timeline stream stalled, rebuilding clienthealth: timeline stream stalled, rebuilding client[INTERACT] t=1787637291756 refresh active=sB hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787637291756 refresh active=sB hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787637291756 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+
+resume s1: already active, re-navigate only[INTERACT] t=1787637291756 refresh active=sA hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787637291756 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+data root marker: product "OtherApp" not recognized; migration skipped
+data root marker: migrated legacy DeepX marker to QAQ-Harness
+data root marker: DeepX marker belongs to another dir/user; migration skipped
+health: all ringing channels stalled, rebuilding client[INTERACT] t=1787656441314 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787656441314 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787656441314 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787656441314 refresh active=seedA hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787656441314 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787656441314 refresh active=seed1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787656441314 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787656441314 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787656441314 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787656441314 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787656441315 refresh active=seedB hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787656441315 applied ev=AskRequested ev_seed=seedA active_seed= machines=["seedA"][INTERACT] t=1787656441315 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+
+[INTERACT] t=1787656441315 refresh active=seedB hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787656441315 refresh active=seedC hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787656441315 refresh active= hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787656441315 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0
+[INTERACT] t=1787656441315 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+[INTERACT] t=1787656441315 refresh active=seedA hit=true next_kind=ask cur_kind= rev=0
+[INTERACT] t=1787656441315 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+[INTERACT] t=1787656441316 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0
+[INTERACT] t=1787656441316 applied ev=AskRequested ev_seed=seedB active_seed=seedA machines=["seedA", "seedB"]
+[INTERACT] t=1787656441316 refresh active=seedB hit=true next_kind=ask cur_kind=ask rev=1
+[INTERACT] t=1787656441316 refresh active=seedA hit=true next_kind=ask cur_kind=ask rev=2
+[INTERACT] t=1787656441316 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787656441316 refresh active=sA hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787656441316 refresh active=sA hit=false next_kind= cur_kind= rev=0
+resume s1: already active, re-navigate only
+
+[INTERACT] t=1787656441316 refresh active=sB hit=false next_kind= cur_kind= rev=0
+health: timeline stream stalled, rebuilding client[INTERACT] t=1787656441316 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787656441316 refresh active=sB hit=false next_kind= cur_kind= rev=0
+health: timeline stream stalled, rebuilding client
+[INTERACT] t=1787656441316 refresh active=sA hit=false next_kind= cur_kind= rev=0
+
+resume s1: already active, re-navigate only
+[INTERACT] t=1787656441316 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+data root marker: product "OtherApp" not recognized; migration skipped
+data root marker: migrated legacy DeepX marker to QAQ-Harness
+data root marker: DeepX marker belongs to another dir/user; migration skipped
+[INTERACT] t=1787662679844 refresh active=seed1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787662679844 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787662679844 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787662679844 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787662679844 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787662679844 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787662679844 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787662679844 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787662679844 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+health: all ringing channels stalled, rebuilding client
+
+[INTERACT] t=1787662679844 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787662679844 refresh active=seedB hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787662679845 refresh active=seedB hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787662679845 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+[INTERACT] t=1787662679845 applied ev=AskRequested ev_seed=seedA active_seed= machines=["seedA"]
+[INTERACT] t=1787662679845 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0[INTERACT] t=1787662679845 refresh active= hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787662679845 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+
+[INTERACT] t=1787662679845 refresh active=seedC hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787662679845 refresh active=seedA hit=true next_kind=ask cur_kind= rev=0[INTERACT] t=1787662679845 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+[INTERACT] t=1787662679845 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0
+
+[INTERACT] t=1787662679845 applied ev=AskRequested ev_seed=seedB active_seed=seedA machines=["seedA", "seedB"]
+[INTERACT] t=1787662679845 refresh active=seedB hit=true next_kind=ask cur_kind=ask rev=1
+[INTERACT] t=1787662679845 refresh active=seedA hit=true next_kind=ask cur_kind=ask rev=2
+[INTERACT] t=1787662679845 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787662679846 refresh active=sA hit=false next_kind= cur_kind= rev=0
+resume s1: already active, re-navigate only[INTERACT] t=1787662679846 refresh active=sA hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787662679846 refresh active=sB hit=false next_kind= cur_kind= rev=0
+health: timeline stream stalled, rebuilding clienthealth: timeline stream stalled, rebuilding client
+[INTERACT] t=1787662679846 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787662679846 refresh active=sB hit=false next_kind= cur_kind= rev=0
+resume s1: already active, re-navigate only
+[INTERACT] t=1787662679846 refresh active=sA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787662679846 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+data root marker: product "OtherApp" not recognized; migration skipped
+data root marker: migrated legacy DeepX marker to QAQ-Harness
+data root marker: DeepX marker belongs to another dir/user; migration skipped
+[INTERACT] t=1787664266382 refresh active=seedA hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787664266382 refresh active=seedA hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787664266382 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787664266382 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787664266382 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787664266382 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787664266382 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+health: all ringing channels stalled, rebuilding client
+[INTERACT] t=1787664266382 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787664266382 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787664266382 refresh active=seed1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787664266383 refresh active=seedB hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787664266383 refresh active=seedB hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787664266383 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+
+[INTERACT] t=1787664266383 refresh active=seedC hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787664266383 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0
+[INTERACT] t=1787664266383 applied ev=AskRequested ev_seed=seedA active_seed= machines=["seedA"]
+[INTERACT] t=1787664266383 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+[INTERACT] t=1787664266383 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+[INTERACT] t=1787664266383 refresh active= hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787664266383 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0
+[INTERACT] t=1787664266383 refresh active=seedA hit=true next_kind=ask cur_kind= rev=0
+[INTERACT] t=1787664266383 applied ev=AskRequested ev_seed=seedB active_seed=seedA machines=["seedA", "seedB"]
+[INTERACT] t=1787664266383 refresh active=seedB hit=true next_kind=ask cur_kind=ask rev=1
+[INTERACT] t=1787664266383 refresh active=seedA hit=true next_kind=ask cur_kind=ask rev=2
+[INTERACT] t=1787664266383 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+resume s1: already active, re-navigate only[INTERACT] t=1787664266384 refresh active=sA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787664266384 refresh active=sA hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787664266384 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787664266384 refresh active=sB hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787664266384 refresh active=sB hit=false next_kind= cur_kind= rev=0health: timeline stream stalled, rebuilding client
+health: timeline stream stalled, rebuilding client
+
+resume s1: already active, re-navigate only
+
+[INTERACT] t=1787664266384 refresh active=sA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787664266384 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+data root marker: product "OtherApp" not recognized; migration skipped
+data root marker: migrated legacy DeepX marker to QAQ-Harness
+data root marker: DeepX marker belongs to another dir/user; migration skipped
+[INTERACT] t=1787666373736 refresh active=seedA hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787666373736 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666373736 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666373736 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666373736 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666373736 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666373736 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666373736 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666373736 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+health: all ringing channels stalled, rebuilding client
+[INTERACT] t=1787666373736 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787666373737 applied ev=AskRequested ev_seed=seedA active_seed= machines=["seedA"]
+[INTERACT] t=1787666373737 refresh active=seedB hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787666373737 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"][INTERACT] t=1787666373737 refresh active=seedB hit=false next_kind= cur_kind= rev=0
+
+
+[INTERACT] t=1787666373737 refresh active= hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666373737 refresh active=seedC hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666373737 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"][INTERACT] t=1787666373737 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0
+
+[INTERACT] t=1787666373737 refresh active=seedA hit=true next_kind=ask cur_kind= rev=0
+[INTERACT] t=1787666373737 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0
+[INTERACT] t=1787666373737 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+[INTERACT] t=1787666373738 applied ev=AskRequested ev_seed=seedB active_seed=seedA machines=["seedA", "seedB"]
+[INTERACT] t=1787666373738 refresh active=seedB hit=true next_kind=ask cur_kind=ask rev=1
+[INTERACT] t=1787666373738 refresh active=seedA hit=true next_kind=ask cur_kind=ask rev=2
+[INTERACT] t=1787666373738 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666373738 refresh active=sA hit=false next_kind= cur_kind= rev=0resume s1: already active, re-navigate only
+
+[INTERACT] t=1787666373738 refresh active=sA hit=false next_kind= cur_kind= rev=0
+health: timeline stream stalled, rebuilding client[INTERACT] t=1787666373738 refresh active=sB hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787666373738 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+
+health: timeline stream stalled, rebuilding client
+[INTERACT] t=1787666373738 refresh active=sB hit=false next_kind= cur_kind= rev=0
+
+resume s1: already active, re-navigate only
+[INTERACT] t=1787666373738 refresh active=sA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666373738 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+data root marker: product "OtherApp" not recognized; migration skipped
+data root marker: migrated legacy DeepX marker to QAQ-Harness
+data root marker: DeepX marker belongs to another dir/user; migration skipped
+[INTERACT] t=1787666473714 refresh active=seedA hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787666473713 refresh active=seed1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787666473714 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666473713 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787666473713 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666473713 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666473713 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666473714 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666473713 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+health: all ringing channels stalled, rebuilding client
+
+[INTERACT] t=1787666473714 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666473715 applied ev=AskRequested ev_seed=seedA active_seed= machines=["seedA"][INTERACT] t=1787666473715 refresh active=seedB hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666473715 refresh active=seedB hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666473715 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+
+[INTERACT] t=1787666473715 refresh active= hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787666473715 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+[INTERACT] t=1787666473715 refresh active=seedC hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666473715 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0
+
+[INTERACT] t=1787666473715 refresh active=seedA hit=true next_kind=ask cur_kind= rev=0
+[INTERACT] t=1787666473715 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0
+[INTERACT] t=1787666473715 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+[INTERACT] t=1787666473716 applied ev=AskRequested ev_seed=seedB active_seed=seedA machines=["seedB", "seedA"]
+[INTERACT] t=1787666473716 refresh active=seedB hit=true next_kind=ask cur_kind=ask rev=1
+[INTERACT] t=1787666473716 refresh active=s1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787666473716 refresh active=seedA hit=true next_kind=ask cur_kind=ask rev=2
+
+[INTERACT] t=1787666473716 refresh active=sA hit=false next_kind= cur_kind= rev=0
+resume s1: already active, re-navigate only
+[INTERACT] t=1787666473716 refresh active=sA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666473716 refresh active=s1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787666473716 refresh active=sB hit=false next_kind= cur_kind= rev=0
+health: timeline stream stalled, rebuilding client
+
+[INTERACT] t=1787666473716 refresh active=sB hit=false next_kind= cur_kind= rev=0
+health: timeline stream stalled, rebuilding client
+resume s1: already active, re-navigate only
+[INTERACT] t=1787666473716 refresh active=sA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666473716 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+data root marker: product "OtherApp" not recognized; migration skipped
+data root marker: migrated legacy DeepX marker to QAQ-Harness
+data root marker: DeepX marker belongs to another dir/user; migration skipped
+[INTERACT] t=1787666536415 refresh active=seedA hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787666536415 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666536415 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666536415 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666536415 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666536415 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666536415 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666536415 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666536415 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+health: all ringing channels stalled, rebuilding client
+
+[INTERACT] t=1787666536416 refresh active=seedB hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787666536416 refresh active=seedB hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787666536416 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+
+
+[INTERACT] t=1787666536416 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+[INTERACT] t=1787666536416 refresh active=seedC hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787666536416 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0
+[INTERACT] t=1787666536416 applied ev=AskRequested ev_seed=seedA active_seed= machines=["seedA"]
+[INTERACT] t=1787666536416 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+[INTERACT] t=1787666536416 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"][INTERACT] t=1787666536416 refresh active= hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787666536416 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0
+[INTERACT] t=1787666536416 refresh active=seedA hit=true next_kind=ask cur_kind= rev=0
+[INTERACT] t=1787666536417 applied ev=AskRequested ev_seed=seedB active_seed=seedA machines=["seedA", "seedB"]
+[INTERACT] t=1787666536417 refresh active=seedB hit=true next_kind=ask cur_kind=ask rev=1
+[INTERACT] t=1787666536417 refresh active=seedA hit=true next_kind=ask cur_kind=ask rev=2
+[INTERACT] t=1787666536417 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+resume s1: already active, re-navigate only
+[INTERACT] t=1787666536417 refresh active=s1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787666536417 refresh active=sA hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787666536417 refresh active=sA hit=false next_kind= cur_kind= rev=0
+resume s1: already active, re-navigate only
+[INTERACT] t=1787666536417 refresh active=sB hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787666536417 refresh active=sB hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787666536417 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+
+health: timeline stream stalled, rebuilding client
+
+[INTERACT] t=1787666536417 refresh active=sA hit=false next_kind= cur_kind= rev=0
+health: timeline stream stalled, rebuilding client
+data root marker: product "OtherApp" not recognized; migration skipped
+data root marker: migrated legacy DeepX marker to QAQ-Harness
+data root marker: DeepX marker belongs to another dir/user; migration skipped
+[INTERACT] t=1787668084894 refresh active=seedA hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787668084894 refresh active=seedA hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787668084894 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787668084894 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+
+
+[INTERACT] t=1787668084894 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787668084894 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787668084894 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787668084894 refresh active=seed1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787668084894 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+
+health: all ringing channels stalled, rebuilding client
+[INTERACT] t=1787668084895 refresh active=seed1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787668084895 refresh active=seedB hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787668084895 refresh active=seedB hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787668084896 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"][INTERACT] t=1787668084896 refresh active=seedC hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787668084896 applied ev=AskRequested ev_seed=seedA active_seed= machines=["seedA"]
+[INTERACT] t=1787668084896 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"][INTERACT] t=1787668084896 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0
+
+[INTERACT] t=1787668084896 refresh active= hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787668084896 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0[INTERACT] t=1787668084896 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+
+[INTERACT] t=1787668084896 refresh active=seedA hit=true next_kind=ask cur_kind= rev=0
+[INTERACT] t=1787668084896 applied ev=AskRequested ev_seed=seedB active_seed=seedA machines=["seedA", "seedB"]
+[INTERACT] t=1787668084896 refresh active=seedB hit=true next_kind=ask cur_kind=ask rev=1
+[INTERACT] t=1787668084896 refresh active=s1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787668084896 refresh active=seedA hit=true next_kind=ask cur_kind=ask rev=2
+
+resume s1: already active, re-navigate only[INTERACT] t=1787668084896 refresh active=sA hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787668084897 refresh active=sA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787668084897 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+health: timeline stream stalled, rebuilding client[INTERACT] t=1787668084897 refresh active=sB hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787668084897 refresh active=sB hit=false next_kind= cur_kind= rev=0
+resume s1: already active, re-navigate only
+
+health: timeline stream stalled, rebuilding client
+
+[INTERACT] t=1787668084897 refresh active=sA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787668084897 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+data root marker: product "OtherApp" not recognized; migration skipped
+data root marker: migrated legacy DeepX marker to QAQ-Harness
+data root marker: DeepX marker belongs to another dir/user; migration skipped
+[INTERACT] t=1787711851181 refresh active=seedA hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787711851181 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787711851181 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787711851181 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787711851181 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787711851181 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787711851181 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787711851181 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787711851181 refresh active=seedA hit=false next_kind= cur_kind= rev=0health: all ringing channels stalled, rebuilding client
+
+[INTERACT] t=1787711851182 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787711851182 applied ev=AskRequested ev_seed=seedA active_seed= machines=["seedA"]
+[INTERACT] t=1787711851183 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+[INTERACT] t=1787711851183 refresh active=seedB hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787711851183 refresh active=seedB hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787711851183 refresh active= hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787711851183 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"][INTERACT] t=1787711851183 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0
+
+[INTERACT] t=1787711851183 refresh active=seedC hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787711851183 refresh active=seedA hit=true next_kind=ask cur_kind= rev=0
+[INTERACT] t=1787711851183 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"][INTERACT] t=1787711851183 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0
+
+[INTERACT] t=1787711851183 applied ev=AskRequested ev_seed=seedB active_seed=seedA machines=["seedB", "seedA"]
+[INTERACT] t=1787711851183 refresh active=seedB hit=true next_kind=ask cur_kind=ask rev=1
+[INTERACT] t=1787711851183 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787711851183 refresh active=seedA hit=true next_kind=ask cur_kind=ask rev=2
+[INTERACT] t=1787711851183 refresh active=sA hit=false next_kind= cur_kind= rev=0resume s1: already active, re-navigate only
+
+[INTERACT] t=1787711851183 refresh active=sA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787711851184 refresh active=s1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787711851184 refresh active=sB hit=false next_kind= cur_kind= rev=0
+health: timeline stream stalled, rebuilding client
+health: timeline stream stalled, rebuilding client
+
+[INTERACT] t=1787711851184 refresh active=sB hit=false next_kind= cur_kind= rev=0
+resume s1: already active, re-navigate only
+[INTERACT] t=1787711851184 refresh active=sA hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787711851184 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+
+data root marker: product "OtherApp" not recognized; migration skipped
+data root marker: migrated legacy DeepX marker to QAQ-Harness
+data root marker: DeepX marker belongs to another dir/user; migration skipped
+[INTERACT] t=1787712953645 refresh active=seed1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787712953645 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787712953645 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787712953645 refresh active=seed1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787712953645 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787712953645 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787712953645 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787712953645 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787712953645 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+health: all ringing channels stalled, rebuilding client
+
+[INTERACT] t=1787712953645 refresh active=seed1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787712953645 refresh active=seedB hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787712953645 refresh active=seedB hit=false next_kind= cur_kind= rev=0
+
+
+[INTERACT] t=1787712953645 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+[INTERACT] t=1787712953645 refresh active=seedC hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787712953646 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0
+[INTERACT] t=1787712953646 applied ev=AskRequested ev_seed=seedA active_seed= machines=["seedA"]
+[INTERACT] t=1787712953646 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+[INTERACT] t=1787712953646 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"][INTERACT] t=1787712953646 refresh active= hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787712953646 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0
+[INTERACT] t=1787712953646 refresh active=seedA hit=true next_kind=ask cur_kind= rev=0
+[INTERACT] t=1787712953646 applied ev=AskRequested ev_seed=seedB active_seed=seedA machines=["seedB", "seedA"]
+[INTERACT] t=1787712953646 refresh active=seedB hit=true next_kind=ask cur_kind=ask rev=1
+[INTERACT] t=1787712953646 refresh active=seedA hit=true next_kind=ask cur_kind=ask rev=2
+[INTERACT] t=1787712953646 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787712953646 refresh active=sA hit=false next_kind= cur_kind= rev=0resume s1: already active, re-navigate only
+[INTERACT] t=1787712953646 refresh active=sA hit=false next_kind= cur_kind= rev=0
+
+health: timeline stream stalled, rebuilding clienthealth: timeline stream stalled, rebuilding client
+[INTERACT] t=1787712953646 refresh active=sB hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787712953647 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787712953647 refresh active=sB hit=false next_kind= cur_kind= rev=0
+resume s1: already active, re-navigate only[INTERACT] t=1787712953647 refresh active=sA hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787712953647 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+data root marker: product "OtherApp" not recognized; migration skipped
+data root marker: migrated legacy DeepX marker to QAQ-Harness
+data root marker: DeepX marker belongs to another dir/user; migration skipped
+[INTERACT] t=1787717340151 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787717340152 refresh active=seed1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787717340151 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787717340151 refresh active=seedA hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787717340151 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787717340151 refresh active=seed1 hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787717340151 refresh active=seedA hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787717340151 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787717340152 refresh active=seedA hit=false next_kind= cur_kind= rev=0health: all ringing channels stalled, rebuilding client
+
+[INTERACT] t=1787717340152 refresh active=seed1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787717340152 refresh active=seedB hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787717340152 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"]
+[INTERACT] t=1787717340152 applied ev=AskRequested ev_seed=seedA active_seed= machines=["seedA"][INTERACT] t=1787717340153 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0
+
+[INTERACT] t=1787717340153 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"][INTERACT] t=1787717340153 refresh active=seedB hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787717340153 refresh active= hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787717340153 applied ev=AskRequested ev_seed=seed1 active_seed=seed1 machines=["seed1"][INTERACT] t=1787717340153 refresh active=seed1 hit=true next_kind=ask cur_kind= rev=0
+[INTERACT] t=1787717340153 refresh active=seedC hit=false next_kind= cur_kind= rev=0
+
+[INTERACT] t=1787717340153 refresh active=seedA hit=true next_kind=ask cur_kind= rev=0
+[INTERACT] t=1787717340153 applied ev=AskRequested ev_seed=seedB active_seed=seedA machines=["seedB", "seedA"]
+[INTERACT] t=1787717340153 refresh active=seedB hit=true next_kind=ask cur_kind=ask rev=1
+[INTERACT] t=1787717340153 refresh active=seedA hit=true next_kind=ask cur_kind=ask rev=2
+[INTERACT] t=1787717340153 refresh active=sA hit=false next_kind= cur_kind= rev=0[INTERACT] t=1787717340153 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787717340154 refresh active=sA hit=false next_kind= cur_kind= rev=0
+
+health: timeline stream stalled, rebuilding clientresume s1: already active, re-navigate only[INTERACT] t=1787717340154 refresh active=sB hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787717340154 refresh active=sB hit=false next_kind= cur_kind= rev=0
+
+health: timeline stream stalled, rebuilding client
+
+[INTERACT] t=1787717340154 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+[INTERACT] t=1787717340154 refresh active=sA hit=false next_kind= cur_kind= rev=0
+resume s1: already active, re-navigate only
+[INTERACT] t=1787717340154 refresh active=s1 hit=false next_kind= cur_kind= rev=0
+data root marker: product "OtherApp" not recognized; migration skipped
+data root marker: migrated legacy DeepX marker to QAQ-Harness
+data root marker: DeepX marker belongs to another dir/user; migration skipped

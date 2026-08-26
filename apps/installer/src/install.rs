@@ -519,7 +519,7 @@ fn install_file_from_reader<R: Read>(
         .file_name()
         .and_then(|v| v.to_str())
         .ok_or_else(|| format!("目标文件名无效: {}", target.display()))?;
-    let temp = parent.join(format!(".{file_name}.deepx-new-{}", std::process::id()));
+    let temp = parent.join(format!(".{file_name}.qaqh-new-{}", std::process::id()));
     if temp.exists() {
         retry_io(|| fs::remove_file(&temp))
             .map_err(|e| format!("清理临时文件 '{}' 失败: {e}", temp.display()))?;

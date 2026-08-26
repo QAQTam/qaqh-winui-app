@@ -21,6 +21,36 @@
 //! - `RichTextInline::Hyperlink` 后端只渲染为普通 Run（无点击事件）
 //! - `RichTextRun::is_italic / is_strikethrough` 后端尚未消费
 
+/// Strips characters that XAML text APIs reject (XML 1.0 invalid): C0
+/// controls other than tab/LF/CR, plus the noncharacters U+FFFE/U+FFFF.
+///
+/// Streaming pipelines feed arbitrary model/tool bytes straight into text
+/// properties; one stray control glyph used to escalate into a stowed
+/// exception (`0xc000027b`) and take the whole window down (长对话崩溃).
+pub(crate) fn sanitize_xaml_text(input: &str) -> String {
+    if !input
+        .chars()
+        .any(|c| {
+            !(matches!(
+                c,
+                '\t' | '\n' | '\r' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..='\u{10FFFF}'
+            ))
+        })
+    {
+        return input.to_string();
+    }
+    input
+        .chars()
+        .filter(|c| {
+            matches!(
+                c,
+                '\t' | '\n' | '\r' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..='\u{10FFFF}'
+            )
+        })
+        .collect()
+}
+
+
 mod block_transcript;
 mod diagram;
 mod highlight;
@@ -80,6 +110,12 @@ pub struct RichTextOutput {
 #[derive(Clone, Debug, PartialEq)]
 pub enum FinalBlock {
     Paragraph(RichTextParagraph),
+    /// 标题（h1-h6）。与正文分段携带层级信息，供上层做差异化段前距
+    /// （论文排版惯例：标题段前 > 段后，让标题与其后内容成组）。
+    Heading {
+        level: u8,
+        paragraph: RichTextParagraph,
+    },
     Table(TableData),
     Code(CodeBlock),
     Diagram(DiagramBlock),
@@ -140,7 +176,10 @@ pub fn render_final(blocks: &[Block]) -> RichTextOutput {
                         // font_weight（run 级）+ 后端绑定）。
                     }
                 }
-                out.blocks.push(FinalBlock::Paragraph(para.clone()));
+                out.blocks.push(FinalBlock::Heading {
+                    level: *level,
+                    paragraph: para.clone(),
+                });
                 out.paragraphs.push(para);
             }
             Block::List {
@@ -181,9 +220,12 @@ pub fn render_final(blocks: &[Block]) -> RichTextOutput {
                 for child in children {
                     let mut para = render_final(std::slice::from_ref(child));
                     for b in &mut para.blocks {
-                        if let FinalBlock::Paragraph(p) = b {
-                            p.inlines
-                                .insert(0, RichTextInline::Run(RichTextRun::plain("> ")));
+                        match b {
+                            FinalBlock::Paragraph(p) | FinalBlock::Heading { paragraph: p, .. } => {
+                                p.inlines
+                                    .insert(0, RichTextInline::Run(RichTextRun::plain("> ")));
+                            }
+                            _ => {}
                         }
                     }
                     out.paragraphs.extend(para.paragraphs);
@@ -272,11 +314,11 @@ pub fn inlines_to_rich(inlines: &[Inline]) -> Vec<RichTextInline> {
             }
             Inline::Code(c) => {
                 // 行内代码：等宽 + CJK fallback（裸 "Consolas" 无中文字形，
-                // 中文会落系统默认雅黑，与正文 HarmonyOS 混排割裂——与
+                // 中文会落系统默认雅黑，与正文 MiSans 混排割裂——与
                 // 代码块 CODE_FONT_FAMILY 同链，此处用系统字体名免资源依赖）。
                 let mut run = RichTextRun::plain(c);
                 run.font_family = Some(
-                    "Cascadia Mono, Consolas, Microsoft YaHei UI, HarmonyOS Sans SC".to_string(),
+                    "Cascadia Mono, Consolas, Microsoft YaHei UI".to_string(),
                 );
                 push_run(&mut out, run);
             }
@@ -493,6 +535,27 @@ mod tests {
             &out.paragraphs[3].inlines[0],
             RichTextInline::Run(r) if r.is_bold && r.font_size.is_none()
         ));
+    }
+
+    /// 标题块携带层级信息：FinalBlock::Heading 供上层做差异化段前距
+    /// （h1 > h2 > h3，论文式“段前 > 段后”）；正文仍是 Paragraph。
+    #[test]
+    fn heading_blocks_carry_level_for_spacing() {
+        let out = render_final(&markdown_core::parse_final("# 一\n\n## 二\n\n### 三\n\n正文"));
+        assert_eq!(out.blocks.len(), 4);
+        assert!(matches!(
+            &out.blocks[0],
+            FinalBlock::Heading { level: 1, .. }
+        ));
+        assert!(matches!(
+            &out.blocks[1],
+            FinalBlock::Heading { level: 2, .. }
+        ));
+        assert!(matches!(
+            &out.blocks[2],
+            FinalBlock::Heading { level: 3, .. }
+        ));
+        assert!(matches!(&out.blocks[3], FinalBlock::Paragraph(_)));
     }
 
     /// 表格走独立通道（不再降级为文本行）

@@ -93,6 +93,12 @@ pub(crate) struct BridgeCore {
     pub(crate) settings_proj: Mutex<SettingsProjection>,
     /// Local preference version used by the UI refresh loop.
     pub(crate) settings_proj_rev: AtomicU64,
+    /// 最近一次 config.save 结果（None=尚无新结果）。Ok(())=成功、Err(msg)=失败。
+    /// 由 spawn_config_save 写入；设置页轮询 save_status_rev 变化后消费，驱动
+    /// 「已保存 ✓」/错误提示（2026-08-25 R3：此前失败仅进 log_diag，UI 恒报成功）。
+    pub(crate) save_status: Mutex<Option<Result<(), String>>>,
+    /// save_status 数据版本：每次写入递增，UI 侧比对后刷新。
+    pub(crate) save_status_rev: AtomicU64,
     /// XAML Info 面板数据源：bootstrap `conversation.state` 投影。
     pub(crate) info: Mutex<Option<SessionDetail>>,
     /// Info 数据版本：refresh 后递增，UI 侧 timer 比对后刷新（同 session_rev）。
@@ -143,6 +149,9 @@ pub(crate) struct BridgeCore {
     /// timeline live 事件队列（Phase 2：BlockTranscript 单源；delta 可丢
     /// （checkpoint 自愈 + 快照兜底），结构性事件强制入队。
     pub(crate) timeline_events: Mutex<TimelineEventQueues>,
+    /// Composer 草稿持久层（F-N4）：seed → 草稿快照，页面切换/会话切换
+    /// 不再随 use_ref 销毁；容量上限见 core_state::MAX_COMPOSER_DRAFTS。
+    pub(crate) composer_drafts: Mutex<HashMap<String, crate::composer_bar::Draft>>,
     /// timeline 事件数据版本：入队后递增，UI 侧 timer 比对后 drain。
     pub(crate) timeline_rev: AtomicU64,
     /// BUG-003：resume 意图代次。每次 spawn_resume 递增；异步任务在

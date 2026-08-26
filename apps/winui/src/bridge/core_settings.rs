@@ -27,59 +27,70 @@ impl super::BridgeCore {
         }
         let core = self.self_arc();
         let _ = qaqh_client::runtime_handle().spawn(async move {
-            let client = match core.ensure_client().await {
-                Ok(client) => client,
-                Err(err) => {
-                    log_diag(&format!("config_load: connect failed: {err}"));
-                    return;
-                }
-            };
-            let config = match client.query(QueryRequest::ConfigLoad).await {
-                Ok(v) => v,
-                Err(err) => {
-                    log_diag(&format!("config.load failed: {err}"));
-                    return;
-                }
-            };
-            let mut snap = parse_config_load(&config);
-            // workspace.status 与 config.load 并行（独立查询，失败不阻塞）。
-            if let Ok(status) = client.query(QueryRequest::WorkspaceStatus).await {
-                let (cfg, active, endpoint) = parse_workspace_status(&status);
-                snap.workspace_configured_mode = cfg;
-                snap.workspace_active_mode = active;
-                snap.workspace_endpoint = endpoint;
-            }
-            // 工具列表（subagent 勾选项）；失败不阻塞（页面显示空列表）。
-            if let Ok(tools) = client.query(QueryRequest::SkillsListTools).await {
-                snap.tools = parse_tools(&tools);
-            }
-            // 同步投影缓存：settings_view 的权限滑杆/ComboBox 读 settings_proj。
-            // Web 时代由 shell.setSettings 填充；原生迁移后该通道被移除 → 投影恒
-            // 默认（permission_level=0 → UI 误导为 L1/"加载中"）。此处从权威
-            // snapshot 补齐（theme 现亦有 snapshot 来源——2026-08 后端契约新增）。
-            {
-                let mut proj = core.settings_proj.lock().unwrap_or_else(|e| e.into_inner());
-                proj.permission_level = snap.permission_level;
-                proj.lang = snap.lang.clone();
-                proj.workspace_mode = snap.workspace_active_mode.clone();
-                proj.theme = snap.theme.clone();
-            }
-            core.settings_proj_rev.fetch_add(1, Ordering::Relaxed);
-            // 通知开关：后端 config 为单一权威源，落内存 + 本地偏好文件镜像
-            // （通知器初始化在启动早期完成，config.load 到达前仍走本地偏好）。
-            core.notif_enabled
-                .store(snap.notifications_enabled, Ordering::Relaxed);
-            write_notif_pref(snap.notifications_enabled);
-            if snap.notifications_enabled {
-                core.ensure_notifier();
-            }
-            *core.settings.lock().unwrap_or_else(|e| e.into_inner()) = Some(snap);
-            core.settings_rev.fetch_add(1, Ordering::Relaxed);
-            log_diag("config_load: settings snapshot cached");
+            Self::refresh_settings_snapshot(core).await;
         });
+    }
+    /// 拉取 `config.load`(+workspace/tools) 并投影进缓存 ——
+    /// `BridgeCore::spawn_config_load` 与保存成功后的刷新共用实现
+    /// （2026-08-25 R2：此前 spawn_config_save 成功后不刷新缓存、rev 不动，
+    /// 设置页重进回显陈旧值）。
+    async fn refresh_settings_snapshot(core: std::sync::Arc<super::BridgeCore>) {
+        let client = match core.ensure_client().await {
+            Ok(client) => client,
+            Err(err) => {
+                log_diag(&format!("config_load: connect failed: {err}"));
+                return;
+            }
+        };
+        let config = match client.query(QueryRequest::ConfigLoad).await {
+            Ok(v) => v,
+            Err(err) => {
+                log_diag(&format!("config.load failed: {err}"));
+                return;
+            }
+        };
+        let mut snap = parse_config_load(&config);
+        // workspace.status 与 config.load 并行（独立查询，失败不阻塞）。
+        if let Ok(status) = client.query(QueryRequest::WorkspaceStatus).await {
+            let (cfg, active, endpoint) = parse_workspace_status(&status);
+            snap.workspace_configured_mode = cfg;
+            snap.workspace_active_mode = active;
+            snap.workspace_endpoint = endpoint;
+        }
+        // 工具列表（subagent 勾选项）；失败不阻塞（页面显示空列表）。
+        if let Ok(tools) = client.query(QueryRequest::SkillsListTools).await {
+            snap.tools = parse_tools(&tools);
+        }
+        // 同步投影缓存：settings_view 的权限滑杆/ComboBox 读 settings_proj。
+        // Web 时代由 shell.setSettings 填充；原生迁移后该通道被移除 → 投影恒
+        // 默认（permission_level=0 → UI 误导为 L1/"加载中"）。此处从权威
+        // snapshot 补齐（theme 现亦有 snapshot 来源——2026-08 后端契约新增）。
+        {
+            let mut proj = core.settings_proj.lock().unwrap_or_else(|e| e.into_inner());
+            proj.permission_level = snap.permission_level;
+            proj.lang = snap.lang.clone();
+            proj.workspace_mode = snap.workspace_active_mode.clone();
+            proj.theme = snap.theme.clone();
+        }
+        core.settings_proj_rev.fetch_add(1, Ordering::Relaxed);
+        // 通知开关：后端 config 为单一权威源，落内存 + 本地偏好文件镜像
+        // （通知器初始化在启动早期完成，config.load 到达前仍走本地偏好）。
+        core.notif_enabled
+            .store(snap.notifications_enabled, Ordering::Relaxed);
+        write_notif_pref(snap.notifications_enabled);
+        if snap.notifications_enabled {
+            core.ensure_notifier();
+        }
+        *core.settings.lock().unwrap_or_else(|e| e.into_inner()) = Some(snap);
+        core.settings_rev.fetch_add(1, Ordering::Relaxed);
+        log_diag("config_load: settings snapshot cached");
     }
 
     /// 保存设置：`config.save`（camelCase 全字段，对齐 Web `save()`）。
+    ///
+    /// 2026-08-25 R2/R3：成功后立即刷新权威快照（否则 settings 缓存停留在
+    /// 保存前值、rev 不动 → 设置页回显陈旧）；结果写入 `save_status`（rev 门控），
+    /// 由设置页轮询驱动「已保存 ✓」/错误提示——此前失败仅进 log_diag，UI 恒报成功。
     pub(crate) fn spawn_config_save(&self, fields: Value) {
         let core = self.self_arc();
         let _ = qaqh_client::runtime_handle().spawn(async move {
@@ -87,14 +98,40 @@ impl super::BridgeCore {
                 Ok(client) => client,
                 Err(err) => {
                     log_diag(&format!("config.save: connect failed: {err}"));
+                    core.record_save_result(Err(format!("连接 daemon 失败：{err}")));
                     return;
                 }
             };
             match client.action(ActionRequest::ConfigSave { fields }).await {
-                Ok(_) => log_diag("config.save: ok"),
-                Err(err) => log_diag(&format!("config.save failed: {err}")),
+                Ok(_) => {
+                    log_diag("config.save: ok");
+                    core.record_save_result(Ok(()));
+                    // R2：刷新权威快照，设置页 ≤1 轮询周期内回显新值。
+                    Self::refresh_settings_snapshot(core.clone()).await;
+                }
+                Err(err) => {
+                    log_diag(&format!("config.save failed: {err}"));
+                    core.record_save_result(Err(format!("保存失败：{err}")));
+                }
             }
         });
+    }
+
+    /// 记录最近一次 config.save 结果并 bump rev（设置页 rev 门控消费）。
+    pub(crate) fn record_save_result(&self, result: Result<(), String>) {
+        *self.save_status.lock().unwrap_or_else(|e| e.into_inner()) = Some(result);
+        self.save_status_rev.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// `(rev, 最近一次保存结果)`；rev 未变则结果未更新。
+    pub(crate) fn save_status_snapshot(&self) -> (u64, Option<Result<(), String>>) {
+        (
+            self.save_status_rev.load(Ordering::Relaxed),
+            self.save_status
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone(),
+        )
     }
 
     /// 切换预设：`profile.apply`（daemon 应用后下次 config.load 拿到新值）。
@@ -412,6 +449,12 @@ impl super::BridgeCore {
     /// → 误判「选择失败（后端未收到）」。现成功写路径、失败写错误文案，
     /// 均经 `header_rev` 递增让标题栏 500ms 轮询即时反映。
     pub(crate) fn spawn_workspace_set(&self, path: String) {
+        // 空 path 防护：后端 workspace.set 已拒绝空串，这里同步拦截，
+        // 避免无意义网络往返（重启后 current_workspace 为 None 的场景）。
+        if path.trim().is_empty() {
+            log_diag("workspace.set: empty path ignored");
+            return;
+        }
         let core = self.self_arc();
         let _ = qaqh_client::runtime_handle().spawn(async move {
             let client = match core.ensure_client().await {
@@ -447,6 +490,10 @@ impl super::BridgeCore {
                     // 但前端需刷新两侧列表才可见分组变化
                     core.refresh_workspaces_inner().await;
                     core.refresh_sessions_inner().await;
+                    // composer 工具行工作区 chip 显示 meta.cwd（composer_snapshot
+                    // 投影）：递增 composer_rev 驱动 250ms 轮询立即重取，
+                    // 否则 chip 要等下一个无关 composer 事件才更新。
+                    core.composer_rev.fetch_add(1, Ordering::Relaxed);
                 }
                 Err(err) => {
                     log_diag(&format!("workspace.set failed: {err}"));

@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use qaqh_fluent::{motion, tokens};
 use serde_json::json;
-use windows_reactor::*;
 
 use crate::bridge::{Bridge, SettingsProjection};
 use crate::shell_store::{SettingsSnapshot, normalize_effort};
+use qaqh_config_api::{ConfigPatch, SubagentPatch};
 
 use super::sections::{
     advanced_section, api_section, appearance_section, context_section, models_section,
@@ -13,11 +13,9 @@ use super::sections::{
 };
 use super::*;
 
-pub fn settings_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
+pub fn settings_view(cx: &mut RenderCx, bridge: Arc<Bridge>, category: String) -> Element {
     let (_snapshot, set_snapshot) = cx.use_state::<Option<SettingsSnapshot>>(None);
     let (_proj, set_proj) = cx.use_state::<SettingsProjection>(SettingsProjection::default());
-    let (category, set_category) = cx.use_state::<String>("models".to_string());
-    let (pane_open, set_pane_open) = cx.use_state::<bool>(true);
     let (saved_at, set_saved_at) = cx.use_state::<Option<std::time::Instant>>(None);
     let (save_error, set_save_error) = cx.use_state::<Option<String>>(None);
     // 诊断区块：模式切换/导出后自增驱动状态行重渲染。
@@ -39,6 +37,10 @@ pub fn settings_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
     let timer = cx.use_ref::<Option<DispatcherTimer>>(None);
     let last_rev = cx.use_ref::<u64>(0);
     let last_proj_rev = cx.use_ref::<u64>(0);
+    // config.save 结果（rev 门控消费）：驱动「已保存 ✓」/错误提示（P0-B3）。
+    let last_save_status_rev = cx.use_ref::<u64>(0);
+    // 最近有效压缩阈值（开关重开恢复源），权威快照与滑杆双路种子。
+    let compact_restore = cx.use_ref::<f64>(0.75);
     // 未保存修改标记（rev 刷新草稿的闸门）。
     let dirty = cx.use_ref::<bool>(false);
 
@@ -57,6 +59,10 @@ pub fn settings_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
         let timer = timer.clone();
         let last_rev = last_rev.clone();
         let last_proj_rev = last_proj_rev.clone();
+        let last_save_status_rev = last_save_status_rev.clone();
+        let compact_restore = compact_restore.clone();
+        let set_saved_at = set_saved_at.clone();
+        let set_save_error = set_save_error.clone();
         let draft = draft.clone();
         let proj_draft = proj_draft.clone();
         let dirty = dirty.clone();
@@ -68,6 +74,9 @@ pub fn settings_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
             // 值（根因 0）。这里先灌入缓存快照兜住首帧显示，再 force 重拉权威
             // 快照（保存后缓存是陈旧的），轮询随后用最新值刷新。
             if let Some(snap) = core.settings_snapshot().0 {
+                if snap.auto_compact_threshold > 0.0 {
+                    *compact_restore.borrow_mut() = snap.auto_compact_threshold;
+                }
                 if !*dirty.borrow() {
                     *draft.borrow_mut() = snap.clone();
                 }
@@ -79,16 +88,36 @@ pub fn settings_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
             *last_rev.borrow_mut() = rev;
             let (_, prev) = core.settings_projection();
             *last_proj_rev.borrow_mut() = prev;
+            // 初始化为当前 rev：不回放历史保存结果（重进页面不幽灵显示「已保存」）。
+            *last_save_status_rev.borrow_mut() = core.save_status_snapshot().0;
             if let Ok(t) = DispatcherTimer::new(POLL_INTERVAL, {
                 let core = core.clone();
                 let set_snapshot = set_snapshot.clone();
                 let set_proj = set_proj.clone();
                 let last_rev = last_rev.clone();
                 let last_proj_rev = last_proj_rev.clone();
+                let last_save_status_rev = last_save_status_rev.clone();
+                let compact_restore = compact_restore.clone();
+                let set_saved_at = set_saved_at.clone();
+                let set_save_error = set_save_error.clone();
                 let draft = draft.clone();
                 let proj_draft = proj_draft.clone();
                 let dirty = dirty.clone();
                 move || {
+                    // config.save 结果消费（P0-B2/B3）：rev 变化才应用，
+                    // Ok → 「已保存 ✓」；Err → 错误提示（替代无条件成功态）。
+                    let (sstat_rev, sstat) = core.save_status_snapshot();
+                    if sstat_rev != *last_save_status_rev.borrow() {
+                        *last_save_status_rev.borrow_mut() = sstat_rev;
+                        match sstat {
+                            Some(Ok(())) => {
+                                set_saved_at.call(Some(std::time::Instant::now()));
+                                set_save_error.call(None);
+                            }
+                            Some(Err(e)) => set_save_error.call(Some(e)),
+                            None => {}
+                        }
+                    }
                     // settings 投影（config.load 结果）rev 变化且无未保存修改 → 刷新草稿。
                     let (snap, srev) = core.settings_snapshot();
                     if srev != *last_rev.borrow() {
@@ -96,6 +125,10 @@ pub fn settings_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
                         if let Some(snap) = &snap {
                             if !*dirty.borrow() {
                                 *draft.borrow_mut() = snap.clone();
+                            }
+                            // 权威值里的有效阈值 → 开关重开恢复源（P0 反馈）。
+                            if snap.auto_compact_threshold > 0.0 {
+                                *compact_restore.borrow_mut() = snap.auto_compact_threshold;
                             }
                         }
                         set_snapshot.call(snap);
@@ -125,8 +158,6 @@ pub fn settings_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
         let draft = draft.clone();
         let proj_draft = proj_draft.clone();
         let dirty = dirty.clone();
-        let set_saved_at = set_saved_at.clone();
-        let set_save_error = set_save_error.clone();
         move || {
             let d = draft.borrow().clone();
             let pd = proj_draft.borrow().clone();
@@ -141,64 +172,54 @@ pub fn settings_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
             // apiKey：空 = 保持不变（与 Web save() 一致：仅非空且非 "****" 时发送），
             // 避免未编辑 apiKey 时因 draft 为 ""（掩码占位）而误触发后端“空串删除”语义
             // 导致任何保存都清空密钥（Bug 根因 1）。
-            let mut fields = json!({
-                "model": d.model,
-                "baseUrl": d.base_url,
-                "providerId": d.provider_id,
-                "endpoint": d.endpoint,
-                "maxTokens": d.max_tokens,
-                "contextLimit": d.context_limit,
-                "reasoningEffort": normalize_effort(&d.reasoning_effort).to_string(),
-                "autoCompactThreshold": if d.auto_compact_threshold > 0.0 { d.auto_compact_threshold } else { 0.0 },
-                "complianceEnabled": d.compliance_enabled,
-                "lang": pd.lang,
-                "fontFamily": d.font_family,
-                "theme": theme,
-                "subagentModel": d.sub_model,
-                "subagentBaseUrl": d.sub_base_url,
-                "subagentMaxTokens": d.sub_max_tokens,
-                "subagentTimeoutSecs": d.sub_timeout_secs,
-                "subagentDefaultTools": d.sub_tools,
-                "tokenizerPath": d.tokenizer_path,
-                "multimodalProviderType": d.mm_provider_type,
-                "multimodalEnabled": d.mm_enabled,
-                "multimodalBaseUrl": d.mm_base_url,
-                "multimodalModel": d.mm_model,
-                "multimodalMaxTokens": d.mm_max_tokens,
-            });
-            // 主密钥：仅当用户显式输入新值时发送（非空且非掩码），否则省略以保持现值
+            // P1-C4：保存改走 Merge Patch 契约（qaqh-config-api）——字段级
+            // Option，None 不上 wire；密钥守卫同前：空/掩码不发 = 保持现值。
+            let mut patch = ConfigPatch {
+                model: Some(d.model.clone()),
+                base_url: Some(d.base_url.clone()),
+                provider_id: Some(d.provider_id.clone()),
+                endpoint: Some(d.endpoint.clone()),
+                max_tokens: Some(d.max_tokens),
+                context_limit: Some(d.context_limit),
+                reasoning_effort: Some(normalize_effort(&d.reasoning_effort).to_string()),
+                auto_compact_threshold: Some(d.auto_compact_threshold),
+                compliance_enabled: Some(d.compliance_enabled),
+                font_family: Some(d.font_family.clone()),
+                theme: Some(theme),
+                subagent: Some(SubagentPatch {
+                    model: Some(d.sub_model.clone()),
+                    base_url: Some(d.sub_base_url.clone()),
+                    max_tokens: Some(d.sub_max_tokens),
+                    timeout_secs: Some(d.sub_timeout_secs),
+                    default_tools: Some(d.sub_tools.clone()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
             if !d.api_key.is_empty() && d.api_key != "****" {
-                fields["apiKey"] = json!(d.api_key);
+                patch.api_key = Some(d.api_key.clone());
             }
-            // 子代理/多模态密钥同理：空 = 保持（后端 update_string 忽略空串，但显式省略更清晰）
             if !d.sub_api_key.is_empty() && d.sub_api_key != "****" {
-                fields["subagentApiKey"] = json!(d.sub_api_key);
+                if let Some(sub) = patch.subagent.as_mut() {
+                    sub.api_key = Some(d.sub_api_key.clone());
+                }
             }
-            if !d.mm_api_key.is_empty() && d.mm_api_key != "****" {
-                fields["multimodalApiKey"] = json!(d.mm_api_key);
-            }
+            // lang：历史语义「未设置（空）= 不动」，非 Some("")=清除。
+            patch.lang = (!pd.lang.is_empty()).then(|| pd.lang.clone());
             *dirty.borrow_mut() = false;
-            bridge.spawn_config_save(fields);
-            set_saved_at.call(Some(std::time::Instant::now()));
-            set_save_error.call(None);
+            bridge.spawn_config_save(serde_json::to_value(&patch).expect("serialize config patch"));
+            // 成功/失败提示改由轮询消费 save_status 驱动（P0-B3）：
+            // 此前在此处无条件置「已保存」，daemon 拒绝时用户无从察觉。
+            // 成功/失败提示改由轮询消费 save_status 驱动（P0-B3）：
+            // 此前在此处无条件置「已保存」，daemon 拒绝时用户无从察觉。
         }
     };
 
     // ── 字段 setter（写草稿 + 置 dirty）─────────────────────────────
     // 每个闭包捕获 bridge/draft/dirty；通用 helper 不便（借用冲突），逐字段生成。
 
-    // ── 左侧分类导航（原生 NavigationView 菜单项）──────────────────
-    // 选中条、hover/pressed、键盘焦点与系统动效由 WinUI 控件模板负责。
-    // 内容页仍在下方使用稳定 keyed host，避免早期手写 Border↔TextBlock
-    // 类型跳变造成的 reconciler 控件树复用错误。
-    let nav_items: Vec<NavViewItem> = CATEGORIES
-        .iter()
-        .map(|(id, label, symbol)| {
-            NavViewItem::new(*label)
-                .tag(*id)
-                .icon(Icon::symbol(*symbol))
-        })
-        .collect();
+    // 分类导航已移交全局侧栏（NavMode::Settings 原地切换）；
+    // 本视图只渲染选中分类的内容面板（category 由 main.rs 注入）。
 
     // ── 右侧表单区（按分类）────────────────────────────────────────
     let mut rows: Vec<Element> = Vec::new();
@@ -210,6 +231,7 @@ pub fn settings_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
         draft: draft.clone(),
         proj_draft: proj_draft.clone(),
         dirty: dirty.clone(),
+        compact_restore: compact_restore.clone(),
         d: d.clone(),
         pd: pd.clone(),
         set_diag_rev: set_diag_rev.clone(),
@@ -305,19 +327,5 @@ pub fn settings_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
         .columns([GridLength::STAR])
         .into();
 
-    // ── 根：固定展开的标准 NavigationView ─────────────────────────
-    // `Left` 明确禁止 Auto 模式因窗口宽度自行折叠；这正是最初弃用标准
-    // 控件时漏掉的配置。NavigationView 的 content host 保持同构，只有带
-    // category key 的页面子树替换，因此既有稳定性修复仍然成立。
-    NavigationView::new(nav_items, content_host)
-        .selected_tag(category.clone())
-        .on_selection_changed(set_category)
-        .pane_display_mode(NavigationViewPaneDisplayMode::Left)
-        .pane_open(pane_open)
-        .on_pane_open_changed(set_pane_open)
-        .pane_toggle_button_visible(true)
-        .back_button_visible(false)
-        .settings_visible(false)
-        .open_pane_length(280.0)
-        .into()
+    content_host
 }

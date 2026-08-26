@@ -168,7 +168,7 @@ fn stop_daemon_via_http() -> bool {
 
     let home = std::env::var("USERPROFILE").unwrap_or_default();
     let discovery_path = std::path::PathBuf::from(&home)
-        .join(".deepx")
+        .join(".qaqh")
         .join("daemon.json");
 
     let content = match std::fs::read_to_string(&discovery_path) {

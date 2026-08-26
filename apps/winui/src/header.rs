@@ -3,7 +3,7 @@
 //! 布局：
 //!   TitleBar（SetTitleBar 拖拽区，host 自动接线 host.rs:277-288）
 //!   ├── title 槽：TextBlock（会话标题 / 视图名，shell.header 推送）
-//!   └── footer 槽：hstack( ①workspace ②location ③console ┃ ④info ⑤stats ⑥undo ⑦compact )
+//!   └── footer 槽：hstack( ①workspace ②location ③console ┃ ④info ⑤undo ⑥compact )
 //!        —— ⑧pet 不渲染（壳 stub 恒 false，规划决策）
 //!
 //! 状态：timer 轮询 `core.header_snapshot()` rev（同 sidebar 500ms 模式，
@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use windows_reactor::*;
 
-use crate::bridge::{Bridge, HeaderFlag, HeaderState, log_diag};
+use crate::bridge::{Bridge, HeaderState, log_diag};
 
 /// 标题栏高度（PLAN-NATIVE-UI.md 布局：row 0 = 48px）。
 pub const HEADER_HEIGHT: f64 = 48.0;
@@ -126,6 +126,7 @@ pub fn header(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
     // 合并方案：左侧工作区为唯一入口（先选工作区再创建会话）。
     // 顶部按钮不再直调 `workspace.set`（会话级目录），改为代理到
     // 组织工作区：选中/创建组织工作区 + 会话级 set 兜底，保证两处同源。
+    #[allow(unused_variables)]
     let on_workspace = {
         let bridge = bridge.clone();
         move || {
@@ -155,16 +156,29 @@ pub fn header(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
             }
         }
     };
-    let on_stats = {
-        let bridge = bridge.clone();
-        move || bridge.toggle_header_flag(HeaderFlag::Stats)
-    };
     let on_compact = {
         let bridge = bridge.clone();
         move || {
+            // 重发前清除上次终态（F-N3：failed 常驻语义的出口）。
+            let seed = bridge.core().active_seed();
+            bridge.core().clear_compact_result(&seed);
             bridge.spawn_conversation_command(
                 qaqh_client::ConversationCommand::ConversationCompact { turn_id: None },
             )
+        }
+    };
+
+    // F-N1：壳级返回（native TitleBar back chevron）——active_seed 非空回
+    // chat，否则回 home（进设置走 navigate(view, None)，seed 未动 = 天然锚点）。
+    let on_back = {
+        let bridge = bridge.clone();
+        move || {
+            let seed = bridge.core().active_seed();
+            if seed.is_empty() {
+                bridge.navigate("home", None);
+            } else {
+                bridge.navigate("chat", Some(&seed));
+            }
         }
     };
 
@@ -207,6 +221,7 @@ pub fn header(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
         .vertical_alignment(VerticalAlignment::Center)
         .into();
     let en = lang == "en";
+    #[allow(unused_variables)]
     let workspace_label = if en {
         "Choose workspace"
     } else {
@@ -215,6 +230,7 @@ pub fn header(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
     // 工作区路径只读显示（替代原「在资源管理器中打开」按钮）：当前选择
     // 一目了然；过长省略号裁剪（标题栏空间有限），完整路径进 tooltip。
     // 错误文案优先展示（`workspace.set`/picker 失败反馈，SystemCritical）。
+    #[allow(unused_variables)]
     let workspace_path: Element = if let Some(err) = &state.workspace_error {
         text_block(err)
             .font_size(11.0)
@@ -250,11 +266,6 @@ pub fn header(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
             .with_key("header-workspace-path")
             .into()
     };
-    let stats_label = if en {
-        "Usage statistics"
-    } else {
-        "用量统计"
-    };
     let compact_label = if state.compacting {
         if en {
             "Compacting context…"
@@ -266,6 +277,39 @@ pub fn header(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
     } else {
         "压缩上下文"
     };
+    // 压缩终态 chip（F-N3）：completed 绿色 3s 自动淡出（下方 effect 定时
+    // 清除，条件清除防竞态误删新压缩的 running），failed 红色常驻至下次压缩。
+    let compact_completed = state.compact_result.as_deref() == Some("completed");
+    let compact_chip: Element = match state.compact_result.as_deref() {
+        Some("completed") => text_block("压缩完成 ✓")
+            .font_size(12.0)
+            .foreground(ThemeRef::SystemSuccess)
+            .automation_name("压缩完成")
+            .into(),
+        Some("failed") => text_block("压缩失败 ✕")
+            .font_size(12.0)
+            .foreground(ThemeRef::SystemCritical)
+            .automation_name("压缩失败")
+            .into(),
+        _ => grid(()).into(),
+    };
+    cx.use_effect_with_cleanup((state.compact_result.clone(),), {
+        let bridge = bridge.clone();
+        let seed = state.seed.clone();
+        move || -> Option<Box<dyn FnOnce()>> {
+            if !compact_completed {
+                return None;
+            }
+            let b = bridge.clone();
+            let sd = seed.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(3000));
+                // 条件清除：期间状态已变（新压缩 running/手动清除）则 no-op。
+                b.core().clear_compact_result_if(&sd, "completed");
+            });
+            None
+        }
+    });
     let compact_progress: Element = if state.compacting {
         ProgressRing::default()
             .width(16.0)
@@ -303,25 +347,9 @@ pub fn header(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
             on_refresh,
         )
     };
+    // 工作区按钮/路径已移除（cwd 非持久 bug 挂账；恢复时连同
+    // on_workspace/workspace_path 一起回归）。
     let footer: Element = hstack((
-        action_button(
-            Icon::symbol(Symbol::OpenLocal),
-            workspace_label,
-            "header-workspace",
-            true,
-            false,
-            on_workspace,
-        ),
-        workspace_path,
-        divider.clone(),
-        action_button(
-            Icon::symbol(Symbol::FourBars),
-            stats_label,
-            "header-stats",
-            true,
-            state.stats_open,
-            on_stats,
-        ),
         compact_progress,
         action_button(
             Icon::symbol(Symbol::Clear),
@@ -331,15 +359,44 @@ pub fn header(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
             false,
             on_compact,
         ),
+        compact_chip,
         divider.clone(),
         refresh_el,
     ))
     .spacing(6.0)
     .vertical_alignment(VerticalAlignment::Center)
+    // Alt+Left：同返回语义（F-N1）；非 settings/skills 视图为 no-op。
+    .keyboard_accelerator(KeyboardAccelerator::new(
+        VirtualKey::Left,
+        VirtualKeyModifiers::Menu,
+        {
+            let bridge = bridge.clone();
+            let on_back = on_back.clone();
+            move || {
+                let view = bridge.current_view_name();
+                if view == "settings" || view == "skills" {
+                    on_back();
+                }
+            }
+        },
+    ))
     .into();
 
-    // ── TitleBar：title 槽 = 会话标题 / 视图名 ─────────────────
-    TitleBar::new(&state.title)
+    // ── TitleBar：title 槽 = 品牌 · 活动会话标识 ─────────────────
+    // 布局重构（2026-08）：品牌自左栏移入标题栏；session id 小字随右，
+    // 最小化时仍可辨认当前活动会话。
+    let title_text = if state.title.is_empty() {
+        "QAQ-Harness".to_string()
+    } else {
+        format!("QAQ-Harness · {}", state.title)
+    };
+    TitleBar::new(&title_text)
+        .back_button_visible(state.view == "settings" || state.view == "skills")
+        // BUG-FIX：TitleBar 派生 Default，is_back_button_enabled 默认 false 且
+        // title_bar_bindings 无条件下发 → 返回箭头显示但恒灰不可点（回调/快捷键
+        // 均已挂好，仅本体被禁用）。可见时恒启用。
+        .back_button_enabled(true)
+        .on_back_requested(on_back)
         .footer(footer)
         .tall(false)
         .into()

@@ -87,7 +87,7 @@ impl super::BridgeCore {
     /// 壳侧组装标题栏状态：view/seed 来自壳导航与会话
     /// 切换，title 查会话列表，undo/compact disabled 由 conversation 事件
     /// 推断（对齐 Web：`turns.length === 0 || streaming` / `streaming`）。
-    /// info_open/stats_open/compacting/workspace 保留现值（本地状态，
+    /// info_open/compacting/workspace 保留现值（本地状态，
     /// 不经 Web）。每次调用递增 rev（调用方在状态实际变化时触发）。
     pub(crate) fn refresh_header(&self) {
         let view = self
@@ -121,6 +121,15 @@ impl super::BridgeCore {
             .unwrap_or_else(|e| e.into_inner())
             .get(&seed)
             .is_some_and(|status| status == "running");
+        // 压缩终态浮出（F-N3）：running 不算终态，completed/failed 透传
+        // 给 header 渲染 chip。
+        let compact_result = self
+            .compact_statuses
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&seed)
+            .filter(|status| status.as_str() != "running")
+            .cloned();
         // 工作区显示：合并方案——顶部与左侧同源。优先取当前选中组织
         // 工作区的 path（左侧筛选状态），否则回退到活动会话的归属
         // workspace path，再回退到会话 cwd（兼容旧 workspace.set 场景），
@@ -167,6 +176,7 @@ impl super::BridgeCore {
         h.seed = seed;
         h.title = title;
         h.compacting = compacting;
+        h.compact_result = compact_result;
         h.undo_disabled = turns == 0 || streaming;
         h.compact_disabled = streaming;
         // 成功态才同步路径；错误态保留错误文案直到下次成功或用户切工作区
@@ -199,17 +209,68 @@ impl super::BridgeCore {
         *count = (*count).max(1);
     }
 
-    /// 翻转标题栏本地开关（info_open / stats_open）并递增 rev——壳本地
-    /// 状态，不再回传 Web（headerAction::Info/Stats 通道随 WebView 移除
-    /// 而淘汰）。
+    /// 翻转标题栏本地开关（info_open）并递增 rev——壳本地状态，
+    /// 不再回传 Web（headerAction::Info 通道随 WebView 移除而淘汰）。
     pub(crate) fn toggle_header_flag(&self, flag: HeaderFlag) {
         let mut h = self.header_state.lock().unwrap_or_else(|e| e.into_inner());
         match flag {
             HeaderFlag::Info => h.info_open = !h.info_open,
-            HeaderFlag::Stats => h.stats_open = !h.stats_open,
         }
         drop(h);
         self.header_rev.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// 清除压缩终态标记（F-N3：用户再次发起压缩前重置，failed 常驻的出口）。
+    pub(crate) fn clear_compact_result(&self, seed: &str) {
+        let removed = self
+            .compact_statuses
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(seed)
+            .is_some();
+        if removed {
+            self.refresh_header();
+        }
+    }
+
+    /// 条件清除：仅当终态仍为 `expected` 时移除（completed 3s 自动淡出用，
+    /// 防止竞态误删新发起压缩的 running 状态）。
+    pub(crate) fn clear_compact_result_if(&self, seed: &str, expected: &str) {
+        let mut map = self
+            .compact_statuses
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if map.get(seed).map(|s| s.as_str()) == Some(expected) {
+            map.remove(seed);
+            drop(map);
+            self.refresh_header();
+        }
+    }
+
+    /// Composer 草稿持久化上限（F-N4）：超出时逐出任意非活跃条目。
+    pub(crate) const MAX_COMPOSER_DRAFTS: usize = 32;
+
+    /// 保存草稿快照（F-N4 存旧/写穿）；容量满则先逐出一个非活跃 seed。
+    pub(crate) fn save_draft(&self, seed: &str, draft: crate::composer_bar::Draft) {
+        let mut map = self
+            .composer_drafts
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if map.len() >= Self::MAX_COMPOSER_DRAFTS && !map.contains_key(seed) {
+            let active = self.active_seed();
+            if let Some(victim) = map.keys().find(|k| k.as_str() != active).cloned() {
+                map.remove(&victim);
+            }
+        }
+        map.insert(seed.to_string(), draft);
+    }
+
+    /// 取出草稿（F-N4 取新；move 语义——取出即离场，避免残留旧文本）。
+    pub(crate) fn take_draft(&self, seed: &str) -> Option<crate::composer_bar::Draft> {
+        self.composer_drafts
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(seed)
     }
 
     // ── XAML 交互模态（interaction 投影，同 header 模式）────────────

@@ -332,7 +332,14 @@ impl super::BridgeCore {
         state.seed = active.clone();
         state.is_streaming = is_streaming;
         state.has_pending_gate = gate;
-        state.phase = activity.map(|a| a.phase).unwrap_or_default();
+        // phase 与 is_streaming 同源门控（F-N5）：SSE 断连后 activity 永远等
+        // 不到 Ended，存储的 phase 若不门控，「飞速思考中…/奋力回答中…」
+        // 标签将永久残留（is_streaming 自身有 4min stall 超时，phase 沒有）。
+        state.phase = if is_streaming {
+            activity.map(|a| a.phase).unwrap_or_default()
+        } else {
+            WorkPhase::Idle
+        };
         // 交互挂起优先级最高：即使流式进行中，用户必须先响应弹窗。
         if gate {
             state.phase = WorkPhase::WaitingUser;
@@ -340,6 +347,16 @@ impl super::BridgeCore {
         state.model = model;
         state.context_tokens = context_tokens;
         state.context_limit = context_limit;
+        // cwd 显示源 = session.list 投影（后端 meta.cwd 持久数据源），不依赖
+        // 前端内存态 → daemon 重启后随 sessions 刷新自动回填，永不显示空
+        // （修「重启后前端回空 cwd 导致后端逻辑错乱」的显示侧根因）。
+        state.cwd = self
+            .sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .find(|s| s.seed == active)
+            .and_then(|s| s.cwd.clone());
         // Mode and feedback are UI-local; permission comes from config.load.
         state.mode = self
             .composer_mode

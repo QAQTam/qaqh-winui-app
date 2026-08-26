@@ -20,6 +20,7 @@ use std::time::Duration;
 
 use markdown_winui::{DiffFile, diff_file_view};
 use qaqh_client::{TimelineBlockKind, TimelineTurn};
+use qaqh_fluent::tokens;
 use windows_reactor::*;
 
 use crate::bridge::Bridge;
@@ -38,16 +39,19 @@ pub enum DrawerRequest {
     Subagent { seed: String, name: String },
 }
 
-/// 单文件条目：路径 + 统计 + 状态 + 已解析 diff（渲染用）。
+/// 单文件条目：路径 + 统计 + 状态 + 分段 diff（渲染用）。
 #[derive(Clone, PartialEq)]
 pub struct DrawerFile {
     pub path: String,
+    /// 所有段的 ±行数总和（左列文件行展示）。
     pub added: usize,
     pub removed: usize,
-    /// 对应工具失败（✕ 红；diff 可能为空）。
+    /// 任一段工具失败（✕ 红）。
     pub failed: bool,
-    /// 已解析的单文件 diff（path 与其 display_path 一致）。
-    pub file: DiffFile,
+    /// 同文件多次编辑按**调用序**保留各自完整 diff（每段基于该次编辑前的
+    /// 真实文件状态，行号段内自洽）。旧实现 rows.extend 硬拼导致跨片段
+    /// 行号错乱、语义互相矛盾——分段后各段独立可读。
+    pub segments: Vec<DiffFile>,
 }
 
 /// 静态槽（写端组件 / 读端覆盖层分离）。
@@ -305,8 +309,22 @@ fn drawer_content(props: &DrawerContentProps, _cx: &mut RenderCx) -> Element {
                 ("✓", ThemeRef::SystemSuccess)
             };
             let is_selected = i == props.selected;
+            // 左侧选中条（Win11 NavigationView 式）：3px 圆角 accent 竖条。
+            // 未选中态与行底同色（LayerFill）→ 视觉隐形但占位，文本对齐稳定。
+            let indicator: Element = border(text_block(""))
+                .width(3.0)
+                .height(18.0)
+                .background(if is_selected {
+                    ThemeRef::Accent
+                } else {
+                    ThemeRef::LayerFill
+                })
+                .corner_radius(2.0)
+                .vertical_alignment(VerticalAlignment::Center)
+                .into();
             let row = border(
                 hstack((
+                    indicator,
                     text_block(marker).font_size(12.0).foreground(fg),
                     text_block(&f.path)
                         .font_size(12.0)
@@ -324,8 +342,10 @@ fn drawer_content(props: &DrawerContentProps, _cx: &mut RenderCx) -> Element {
                 .spacing(8.0)
                 .padding(Thickness::xy(10.0, 7.0)),
             )
+            // Win11 列表选择语义：中性浅灰底 + 左侧 accent 竖条，
+            // 不再整块刷主题色（F-N8）。
             .background(if is_selected {
-                ThemeRef::AccentSecondary
+                ThemeRef::SubtleFill
             } else {
                 ThemeRef::LayerFill
             })
@@ -342,14 +362,43 @@ fn drawer_content(props: &DrawerContentProps, _cx: &mut RenderCx) -> Element {
     let total_added: usize = props.files.iter().map(|f| f.added).sum();
     let total_removed: usize = props.files.iter().map(|f| f.removed).sum();
 
-    // 右列：选中文件的单列 unified diff。
+    // 右列：选中文件的 unified diff。同文件多次编辑 → 分段展示
+    //（每段基于该次编辑前的真实状态，行号段内自洽）；单段保持原样无节外之枝。
     let current = props.files.get(props.selected).cloned();
     let diff_panel: Element = match &current {
-        Some(f) if !f.file.rows.is_empty() => diff_file_view(
-            &f.file,
-            "ms-appx:///Assets/fonts/CascadiaCode.ttf#Cascadia Code",
-            &format!("drawer-diff-{}-{}", props.turn_id, f.path),
-        ),
+        Some(f) if f.segments.iter().any(|s| !s.rows.is_empty()) => {
+            let multi = f.segments.len() > 1;
+            let sections: Vec<Element> = f
+                .segments
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| !s.rows.is_empty())
+                .map(|(i, seg)| {
+                    let mut section_items: Vec<Element> = Vec::new();
+                    if multi {
+                        section_items.push(
+                            text_block(format!(
+                                "第 {} 次编辑　+{} −{}",
+                                i + 1,
+                                seg.lines_added,
+                                seg.lines_removed
+                            ))
+                            .font_size(11.0)
+                            .semibold()
+                            .foreground(ThemeRef::SecondaryText)
+                            .into(),
+                        );
+                    }
+                    section_items.push(diff_file_view(
+                        seg,
+                        "ms-appx:///Assets/fonts/CascadiaCode.ttf#Cascadia Code",
+                        &format!("drawer-diff-{}-{}-{i}", props.turn_id, f.path),
+                    ));
+                    vstack(section_items).spacing(tokens::SPACE_2).into()
+                })
+                .collect();
+            vstack(sections).spacing(tokens::SPACE_4).into()
+        }
         _ => text_block(if current.as_ref().map(|f| f.failed).unwrap_or(false) {
             "该文件无 diff（工具执行失败）"
         } else {

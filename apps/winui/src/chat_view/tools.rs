@@ -25,7 +25,7 @@ fn tool_action(card: &markdown_winui::ToolCardView) -> String {
         "apply_patch" | "edit" | "edit_file" => "修改文件".to_string(),
         "grep" | "rg" | "search_files" | "search_text" => "搜索内容".to_string(),
         "web_search" | "search_query" => "搜索网页".to_string(),
-        "view_image" | "open_image" => "查看图片".to_string(),
+        "view_image" | "open_image" | "read_image" => "查看图片".to_string(),
         "list_files" | "list_directory" => "列出文件".to_string(),
         _ => format!("调用 {short_name}"),
     }
@@ -66,49 +66,12 @@ fn tool_argument_hint(card: &markdown_winui::ToolCardView) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-/// 是否文件修改类工具（write/edit_file/apply_patch）：完成态由
-/// 「已修改 N 个文件」diff 汇总卡片承担，不再渲染独立工具行；
-/// 运行中保留转圈行（正在修改文件 · path）。
-pub(super) fn is_file_mutation(card: &markdown_winui::ToolCardView) -> bool {
-    let Some(name) = card.name.as_deref() else {
-        return false;
-    };
-    let short_name = name
-        .rsplit(|ch| matches!(ch, '.' | ':' | '/'))
-        .next()
-        .unwrap_or(name);
-    matches!(
-        short_name.to_ascii_lowercase().as_str(),
-        "write" | "write_file" | "apply_patch" | "edit" | "edit_file"
-    )
-}
-
-/// 是否只读/搜索类工具（read/grep/list/web_search/view_image）：高频低信息
-/// 密度——**完成即回收空间**（V4-E），运行中保留转圈行，失败保留 ✕ 行。
-pub(super) fn is_readonly(card: &markdown_winui::ToolCardView) -> bool {
-    let Some(name) = card.name.as_deref() else {
-        return false;
-    };
-    let short_name = name
-        .rsplit(|ch| matches!(ch, '.' | ':' | '/'))
-        .next()
-        .unwrap_or(name);
-    matches!(
-        short_name.to_ascii_lowercase().as_str(),
-        "read"
-            | "read_file"
-            | "grep"
-            | "rg"
-            | "search_files"
-            | "search_text"
-            | "list_files"
-            | "list_directory"
-            | "ls"
-            | "web_search"
-            | "search_query"
-            | "view_image"
-            | "open_image"
-    )
+/// 工具行可见性（V4-E 已废除）：仅抑制 Prepared 预览卡（LLM 刚吐出调用、
+/// 尚未开始执行/等待审批的占位）。运行中转圈、完成 ✓、失败 ✕ 一律保留
+/// 状态行——读/写/编辑的可审计性优先于空间密度（用户决定 2026-08-24）；
+/// 文件修改类仍额外叠加「已修改 N 个文件」diff 汇总卡（turns.rs 流末总结）。
+pub(super) fn tool_row_visible(card: &markdown_winui::ToolCardView) -> bool {
+    card.started || card.done
 }
 
 /// 工具行（V4-D 精简）：状态图标 + 动作短语 + 参数摘要 + 统计（±N · 耗时），
@@ -210,7 +173,7 @@ pub(super) fn collect_diff_drawer(
     turn_id: &str,
     blocks: &[Rc<BlockView>],
 ) -> Option<DrawerRequest> {
-    let mut by_path: Vec<(String, bool, markdown_winui::DiffFile)> = Vec::new();
+    let mut by_path: Vec<(String, bool, Vec<markdown_winui::DiffFile>)> = Vec::new();
     for block in blocks {
         let Some(card) = &block.tool else { continue };
         let markdown_winui::ToolBody::Diff(doc) = &card.body else {
@@ -219,13 +182,12 @@ pub(super) fn collect_diff_drawer(
         let failed = card.failed;
         for f in &doc.files {
             let path = f.display_path().to_string();
-            if let Some((_, f_failed, existing)) = by_path.iter_mut().find(|(p, _, _)| *p == path) {
-                existing.rows.extend(f.rows.clone());
-                existing.lines_added += f.lines_added;
-                existing.lines_removed += f.lines_removed;
+            // 同文件多次编辑 → 追加为独立段（保留各自行号体系），不再硬拼。
+            if let Some((_, f_failed, segs)) = by_path.iter_mut().find(|(p, _, _)| *p == path) {
+                segs.push(f.clone());
                 *f_failed = *f_failed || failed;
             } else {
-                by_path.push((path, failed, f.clone()));
+                by_path.push((path, failed, vec![f.clone()]));
             }
         }
     }
@@ -234,12 +196,12 @@ pub(super) fn collect_diff_drawer(
     }
     let files = by_path
         .into_iter()
-        .map(|(path, failed, file)| DrawerFile {
+        .map(|(path, failed, segments)| DrawerFile {
+            added: segments.iter().map(|s| s.lines_added).sum(),
+            removed: segments.iter().map(|s| s.lines_removed).sum(),
             path,
-            added: file.lines_added,
-            removed: file.lines_removed,
             failed,
-            file,
+            segments,
         })
         .collect();
     Some(DrawerRequest::Diff {
@@ -321,6 +283,33 @@ mod activity_group_tests {
             tool_argument_hint(&tool).as_deref(),
             Some("cargo test -p qaqh-winui")
         );
+    }
+
+    #[test]
+    fn completed_tool_rows_stay_visible_after_v4e_repeal() {
+        // F-N6：完成态只读/搜索/文件修改工具不再被回收，全部保留 ✓ 行；
+        // 仅 Prepared（started=false 且 done=false）预览继续抑制。
+        for name in [
+            "read",
+            "grep",
+            "list_files",
+            "web_search",
+            "write",
+            "edit",
+            "apply_patch",
+        ] {
+            let done_card = card(name, None, true);
+            assert!(tool_row_visible(&done_card), "{name} 完成态应可见");
+        }
+        let running = card("read", None, false);
+        assert!(running.started, "card() 助手默认 started=true");
+        assert!(tool_row_visible(&running));
+        let prepared = markdown_winui::ToolCardView {
+            started: false,
+            done: false,
+            ..card("write", None, false)
+        };
+        assert!(!tool_row_visible(&prepared), "Prepared 预览仍应抑制");
     }
 
     #[test]
