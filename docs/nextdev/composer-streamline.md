@@ -60,7 +60,7 @@ RPC 面现状：`config.load/save/set_permission_level` + `session.activity/list
 | A5 | **执行/规划 toggle chip** | 文本按钮 → 图标+文 toggle chip，选中态有底色；备选：收进工具模式下拉尾部（默认不采） |
 | A6 | **沉浸式角标** | ⤢ 移到卡右上角 hover 显形，footer 减负 |
 
-### 批次 B —— vendor fork 补丁（已解挂：vendor 2026-08-29 冻结定案，转自有组件维护，见 vendor 仓库 VENDOR.md）
+### 批次 B —— vendor fork 补丁（✅ 已落地 2026-08-29，vendor `62385df`；B1+B2 随冻结基线入 VENDOR.md 补丁清单）
 
 | ID | 动作 | 细节 |
 |---|---|---|
