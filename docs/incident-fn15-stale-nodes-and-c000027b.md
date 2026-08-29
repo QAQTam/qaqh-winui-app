@@ -58,9 +58,21 @@ A 方案只是防御。核心疑问未定论：
 - LocalDumps（`QAQ-Harness.exe` + `qaqh-winui.exe` 双进程名键）→ 6 秒 100% 自动复现（启动即 resume）→ cdb `!analyze -v` 解出 0x80040111 全栈。
 - 根因与处置见 §1.2。Expander 崩溃族就此关闭；后续新增折叠 UI 一律走 tap header + 条件渲染，不引入 Expander。
 
-### 4.4 vendor metadata 链深因（挂起）
-- 现象层已定案（§1.2），但「为什么受管激活冷路径在 vendored reactor 下拿不到 factory、其他 Mux 控件NavigationView/TabView/InfoBar 均无恙」未解：dxaml 按名解析属性路径走 `GetActivationFactory<IManagedActivationFactory>` 特殊通道，与 `RoGetActivationFactory` 标准路径不同，vendored 链上无 fallback。
-- 重启条件：若未来需要 Expander /其他触发同冷路径的控件（含第三方 VSM storyboard 重模板），先解此题（活体断点 + `TryGetDependencyPropertyByName` 参数捕获）。
+### 4.4 vendor metadata 链深因 —— 部分闭环（2026-08-29 dxaml 源码分析）
+
+对照源码 `microsoft-ui-xaml winui3-release-2.4.0`（与 app 打包的 `Microsoft.WindowsAppSDK.Runtime 2.4.0` 同版本；MUX `Microsoft.ui.xaml.dll 3.2.0.2511`、MUXC `Microsoft.UI.Xaml.Controls.dll 3.2.3.2608`，二进制内均已含静默探测机制）：
+
+**触发写法（实锤）**：Expander 模板 storyboard 关键帧用真 Binding 取值——
+`<DiscreteDoubleKeyFrame Value="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=TemplateSettings.ContentHeight}" />`。
+且 `Expander.cpp` 的 **OnApplyTemplate 末尾同步调 `UpdateExpandState(false)` → GoToState**，即模板应用途中就要重连这条绑定 → `TryGetDependencyPropertyByName` 落到 `ExpanderTemplateSettings` 类。
+
+**80040111 是设计内良性失败（实锤）**：MUXC 的 `DllTryGetActivationFactory`（dllmain.cpp）注释明说：TemplateSettings 族类型（点名 `PersonPictureTemplateSettings`）**没有 activation factory，探测返回 CLASS_E_CLASSNOTAVAILABLE 属预期**；MUX 侧 `MuxGetActivationFactoryImpl` 静默探测后回退，`RunClassConstructorIfNecessary`（ReflectionAPI.cpp）吞掉激活失败、退 `IXamlType.RunInitializer` 并置 `ExecutedClassConstructor` 缓存位。快照源码内无任何一路把 80040111 判为致命 → **升级 WinAppSDK 无济于事，Expander 禁用令维持为最终缓解**。
+
+**根因精修（假说 B 胜出，最后一环仍属推断）**：崩溃不是激活失败本身，而是其后效——key frame 绑定在 storyboard Enter 时解析不出值（DP 注册处理 `ProcessRegistrations` 的时机 vs 首次 storyboard 进树的竞态），storyboard/绑定失败在动画路径上触发 fail-fast，而 fail-fast 携带的错误上下文正是探测链上 lingering 的 80040111。待定罪点：fail-fast 的确切调用者。
+
+**非确定性来源（实锤）**：类构造器尝试按类缓存（失败也置位）；DP 注册处理时机与首次 storyboard 进树竞态；任何先前的 Expander 实例化都会把整链焐热。30 turns 大会话首轮 Measure 帧内大量 Expander 排队 → 冷命中概率被推满。
+
+**改造红线（风险面测绘完成）**：MUXC 模板内在 **storyboard 关键帧**用 `{Binding ...TemplateSettings.*}` 的控件族——Expander、SplitView、ProgressBar、CommandBar/CommandBarFlyout、Reveal 材质、NavigationView（pane 过渡）。实践中只有 Expander 在 OnApplyTemplate 内同步 GoToState 才踩中冷窗口，其余仅在后挂载的状态转换时运行（此时已热）。规则：**禁用 Expander 维持不变**；上述其余控件可继续用，但若未来出现「模板重应用/Measure 期内状态churn」的用法需重新评估。
 
 ### 4.3 motion 目检疑云
 - 派发链路日志确认正常（backend 收到配置、集合挂上），但人工目检报告"无动画硬变大"。
