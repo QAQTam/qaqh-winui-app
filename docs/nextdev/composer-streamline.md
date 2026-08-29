@@ -1,6 +1,6 @@
 # Composer 精简设计：单卡两区 + 强度滑柄 + 模型/强度入口
 
-> 状态：**设计定稿，待实施**（批次 B 挂起——vendor fork 正在上游同步，同步完成后方可动）· 2026-08-29
+> 状态：**设计定稿，待实施**（批次 B 已解挂：vendor 冻结定案转自有组件维护，2026-08-29）· 2026-08-29
 > 范围：`apps/winui/src/composer_bar/*` · 依赖登记：QAQ-Harness（effort RPC）
 > 设计约束：遵循 Fluent Design 2 语汇；ZCode（Electron 参照物）仅吸收 composer 交互模式，不引入其视觉体系
 
@@ -60,14 +60,14 @@ RPC 面现状：`config.load/save/set_permission_level` + `session.activity/list
 | A5 | **执行/规划 toggle chip** | 文本按钮 → 图标+文 toggle chip，选中态有底色；备选：收进工具模式下拉尾部（默认不采） |
 | A6 | **沉浸式角标** | ⤢ 移到卡右上角 hover 显形，footer 减负 |
 
-### 批次 B —— vendor fork 补丁（**挂起**：上游同步中，同步完成后先 rebase 再动）
+### 批次 B —— vendor fork 补丁（已解挂：vendor 2026-08-29 冻结定案，转自有组件维护，见 vendor 仓库 VENDOR.md）
 
 | ID | 动作 | 细节 |
 |---|---|---|
 | B1 | **Slider 刻度三件套透传** | `widgets/slider.rs` 加 `tick_frequency/tick_placement/snaps_to` 字段+builder → `generated.rs:680 slider_bindings` 推三条 Prop → mount 层照 `Prop::Step` 手写 arm（`backend/winui/mod.rs:2004`）加 `SetTickFrequency/SetTickPlacement/SetSnapsTo`。FFI 槽位已由 bindgen 投影（`bindings.rs:14565-14570`），**遵守 PLAN 禁手刻槽位惯例，不碰 bindings.rs**。估 60-80 行，纯加性 |
 
 补上后强度柄写法：`Slider::new(v).range(0,3).step(1).tick_frequency(1).tick_placement(Outside).snaps_to(Ticks)`。
-挂起期间批次 C 的滑柄可先用 `step(1)` 无刻度形态（行为等价，视觉后补），不阻塞。
+（历史备注：曾因 vendor 上游同步挂起；2026-08-29 上游重写 reactor、同步链终止，vendor 冻结为自有组件，本批次解除挂起。）
 
 ### 批次 C —— 跨仓库依赖
 
