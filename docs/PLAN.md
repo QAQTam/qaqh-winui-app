@@ -121,7 +121,8 @@ turn 级 memo 使终态切换重渲染粒度可控；高亮 LRU 缓存命中路�
 
 设置页原生化（ToggleSwitch/NumberBox/PasswordBox/InfoBar；~~Expander 卡片骨架~~ F-N15 定案全 app 禁用 Expander，分组改 settings_section_header + 平铺 vstack）·
 Composer 精简 + 强度滑柄 + 模型/强度入口（设计定稿见 `docs/nextdev/composer-streamline.md`；批次 B vendor 补丁挂起待上游同步）·
-Composer AutoSuggestBox 斜杠命令 · 全局 FontIcon 化 + PersonPicture 头像 ·
+全局 FontIcon 化 + PersonPicture 头像 + **AnimatedIcon 微动画**（hover 齿轮/放大镜/返回箭头；vendor 需从零投影 AnimatedIcon+AnimatedVisuals 通道 ~150-250 行，PointerHandlers 已备 hover 事件；与 Slider 刻度同批，待 vendor 同步）·
+Composer AutoSuggestBox 斜杠命令 ·
 Ctrl+K 命令面板。实施时各自立 RFC。
 
 ---
