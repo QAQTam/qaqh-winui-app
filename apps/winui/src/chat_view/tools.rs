@@ -328,22 +328,7 @@ mod activity_group_tests {
     }
 }
 
-/// 诊断日志（窗口程序无控制台：写 %TEMP%）。
+/// 诊断日志（统一落 `log/chat_view/`，见 [`crate::app_log`] 模块文档）。
 pub(super) fn log_diag(msg: &str) {
-    use std::io::Write;
-    let path = std::env::temp_dir().join("qaqh-winui.log");
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-    {
-        let _ = writeln!(
-            f,
-            "[{}] {msg}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis())
-                .unwrap_or(0)
-        );
-    }
+    crate::app_log::write("chat_view", msg);
 }

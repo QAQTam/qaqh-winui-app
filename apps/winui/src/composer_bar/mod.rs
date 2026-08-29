@@ -31,7 +31,7 @@
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
-use qaqh_types::tool_mode::{CUSTOM, MINIMAL, MINIMAL_B, MINIMAL_C, MINIMAL_DSH, STANDARD};
+use qaqh_types::tool_mode::{CUSTOM, MINIMAL, MINIMAL_B, MINIMAL_C, STANDARD};
 
 /// 快照轮询间隔（同 interaction_overlay：交互响应优先）。
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
@@ -40,24 +40,17 @@ const INPUT_DEFAULT_HEIGHT: f64 = 84.0;
 const INPUT_AUTO_MAX_HEIGHT: f64 = 180.0;
 const INPUT_MANUAL_MAX_HEIGHT: f64 = 360.0;
 
-/// 诊断日志（同 main.rs log_diag 约定：GUI 子系统无控制台，写文件）。
+/// 诊断日志（统一落 `log/composer/`，见 [`crate::app_log`] 模块文档）。
 fn log_diag(msg: &str) {
-    use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(std::env::var("QAQH_WINUI_LOG").unwrap_or_else(|_| ".qaqh-winui.log".into()))
-    {
-        let _ = writeln!(f, "[composer_bar] {msg}");
-    }
+    crate::app_log::write("composer", msg);
 }
 
 /// 附件 id 计数器（同 Web makeImageId/makeTextId 的进程内唯一语义）。
 static ATT_ID: AtomicU64 = AtomicU64::new(0);
 
-/// 工具模式六选一（PLAN-TOOL-MODES.md；顺序对齐 daemon
-/// standard/minimal/minimal:b/minimal:c/minimal:dsh/custom）。
-const TOOL_MODE_OPTIONS: [&str; 6] = ["标准", "极限·8", "极限·6", "极限·4", "极简", "创造"];
+/// 工具模式五选一（PLAN-TOOL-MODES.md；顺序对齐 daemon
+/// standard/minimal/minimal:b/minimal:c/custom；minimal:dsh 已移除）。
+const TOOL_MODE_OPTIONS: [&str; 5] = ["标准", "极限·8", "极限·6", "极限·4", "创造"];
 
 /// 创造模式默认基底（D6：预设为基底 + 勾选增删；此处用全量已注册工具，
 /// 避免从零勾选漏基础工具导致模型半瘫；精细勾选 UI 后续再做）。
@@ -88,8 +81,7 @@ fn tool_mode_index(mode: &str) -> i32 {
         MINIMAL => 1,
         MINIMAL_B => 2,
         MINIMAL_C => 3,
-        MINIMAL_DSH => 4,
-        CUSTOM => 5,
+        CUSTOM => 4,
         _ => 0,
     }
 }
@@ -101,8 +93,7 @@ fn tool_mode_from_index(index: i32) -> &'static str {
         1 => MINIMAL,
         2 => MINIMAL_B,
         3 => MINIMAL_C,
-        4 => MINIMAL_DSH,
-        5 => CUSTOM,
+        4 => CUSTOM,
         _ => STANDARD,
     }
 }
@@ -271,8 +262,7 @@ mod tests {
         assert_eq!(tool_mode_index(MINIMAL), 1);
         assert_eq!(tool_mode_index(MINIMAL_B), 2);
         assert_eq!(tool_mode_index(MINIMAL_C), 3);
-        assert_eq!(tool_mode_index(MINIMAL_DSH), 4);
-        assert_eq!(tool_mode_index(CUSTOM), 5);
+        assert_eq!(tool_mode_index(CUSTOM), 4);
     }
 
     #[test]
@@ -282,8 +272,7 @@ mod tests {
             (MINIMAL, 1),
             (MINIMAL_B, 2),
             (MINIMAL_C, 3),
-            (MINIMAL_DSH, 4),
-            (CUSTOM, 5),
+            (CUSTOM, 4),
         ];
         for (mode, index) in modes {
             assert_eq!(tool_mode_index(mode), index);
@@ -302,13 +291,12 @@ mod tests {
     #[test]
     fn empty_rendered_mode_accepts_user_clicks_but_skips_sync() {
         // 空态（新会话 meta.tool_mode 为空）：index 0 是挂载/会话切换的
-        // 程序化同步事件，跳过；index 1..=5 必为用户点击，放行（BUG-017）。
+        // 程序化同步事件，跳过；index 1..=4 必为用户点击，放行（BUG-017）。
         assert!(!tool_mode_change_is_user("", 0));
         assert!(tool_mode_change_is_user("", 1)); // 极限·8
         assert!(tool_mode_change_is_user("", 2)); // 极限·6
         assert!(tool_mode_change_is_user("", 3)); // 极限·4
-        assert!(tool_mode_change_is_user("", 4)); // 极简
-        assert!(tool_mode_change_is_user("", 5)); // 创造
+        assert!(tool_mode_change_is_user("", 4)); // 创造
     }
 
     #[test]
@@ -319,8 +307,7 @@ mod tests {
             (MINIMAL, 1),
             (MINIMAL_B, 2),
             (MINIMAL_C, 3),
-            (MINIMAL_DSH, 4),
-            (CUSTOM, 5),
+            (CUSTOM, 4),
         ] {
             assert!(!tool_mode_change_is_user(mode, index), "{mode}@{index}");
         }
@@ -328,7 +315,7 @@ mod tests {
         assert!(tool_mode_change_is_user(STANDARD, 1));
         assert!(tool_mode_change_is_user(MINIMAL, 2));
         assert!(tool_mode_change_is_user(MINIMAL_B, 4));
-        assert!(tool_mode_change_is_user(MINIMAL_DSH, 0));
+        assert!(tool_mode_change_is_user(CUSTOM, 0));
         assert!(tool_mode_change_is_user(CUSTOM, 3));
     }
 }

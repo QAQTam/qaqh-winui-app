@@ -30,6 +30,104 @@ pub fn timeline_snapshot(
         .and_then(|value| serde_json::from_value(value).ok())
 }
 
+/// 快照内容指纹（chat_view 泵 restore 前去重用）。
+///
+/// 手写字段游走 + `discriminant` 哈希，零分配 O(内容总量)——相比
+/// [`timeline_snapshot`] 的 serde_json::Value 双程转换（建树 + 解析，
+/// 切换卡顿的单帧大头）成本低两个数量级。比对语义：与上次已恢复快照
+/// 完全一致 → 跳过转换与 restore（transcript 由 timeline 事件单调
+/// 演进，内容 ⊇ 该快照，重放只会倒退）。
+///
+/// 注意：工具块全部展示字段（summary/output/diff/progress/失败/权限）
+/// 必须纳入——任何一项变化都代表渲染结果变化，漏掉会导致陈旧 UI。
+pub fn snapshot_fingerprint(snapshot: &qaqh_client::TimelineSnapshot) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    snapshot.watermark.hash(&mut h);
+    for turn in &snapshot.turns {
+        turn.turn_id.hash(&mut h);
+        turn.created_seq.hash(&mut h);
+        turn.user_text.hash(&mut h);
+        turn.sealed.hash(&mut h);
+        std::mem::discriminant(&turn.state).hash(&mut h);
+        // failure 类型（qaqh_domain::TimelineFailure）未被 qaqh-client
+        // 导出——不具名，靠字段访问推断；其它处同理全部内联。
+        if let Some(f) = &turn.failure {
+            1u8.hash(&mut h);
+            f.code.hash(&mut h);
+            f.message.hash(&mut h);
+        } else {
+            0u8.hash(&mut h);
+        }
+        for round in &turn.rounds {
+            round.round_num.hash(&mut h);
+            round.sealed.hash(&mut h);
+            round.is_final.hash(&mut h);
+            for block in &round.blocks {
+                block.block_id.hash(&mut h);
+                block.block_order.hash(&mut h);
+                std::mem::discriminant(&block.kind).hash(&mut h);
+                std::mem::discriminant(&block.state).hash(&mut h);
+                block.text.hash(&mut h);
+                if let Some(tool) = &block.tool {
+                    1u8.hash(&mut h);
+                    tool.tool_call_id.hash(&mut h);
+                    tool.name.hash(&mut h);
+                    std::mem::discriminant(&tool.state).hash(&mut h);
+                    if let Some(v) = &tool.summary {
+                        1u8.hash(&mut h);
+                        v.hash(&mut h);
+                    } else {
+                        0u8.hash(&mut h);
+                    }
+                    if let Some(v) = &tool.args_json {
+                        1u8.hash(&mut h);
+                        v.hash(&mut h);
+                    } else {
+                        0u8.hash(&mut h);
+                    }
+                    if let Some(v) = &tool.output {
+                        1u8.hash(&mut h);
+                        v.hash(&mut h);
+                    } else {
+                        0u8.hash(&mut h);
+                    }
+                    if let Some(v) = &tool.diff {
+                        1u8.hash(&mut h);
+                        v.hash(&mut h);
+                    } else {
+                        0u8.hash(&mut h);
+                    }
+                    tool.progress.hash(&mut h);
+                    if let Some(f) = &tool.failure {
+                        1u8.hash(&mut h);
+                        f.code.hash(&mut h);
+                        f.message.hash(&mut h);
+                    } else {
+                        0u8.hash(&mut h);
+                    }
+                    if let Some(p) = &tool.permission {
+                        1u8.hash(&mut h);
+                        p.reason.hash(&mut h);
+                        for path in &p.paths {
+                            path.hash(&mut h);
+                        }
+                        p.category.hash(&mut h);
+                        p.level.hash(&mut h);
+                        p.risk.hash(&mut h);
+                        p.consequence.hash(&mut h);
+                    } else {
+                        0u8.hash(&mut h);
+                    }
+                } else {
+                    0u8.hash(&mut h);
+                }
+            }
+        }
+    }
+    h.finish()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

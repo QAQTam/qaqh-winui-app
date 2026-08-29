@@ -106,8 +106,10 @@ impl Bridge {
                     // Canonical conversation events are queued for the native
                     // ChatView; no shell projection participates here.
                     timeline_events: Mutex::new(TimelineEventQueues::default()),
+                    chat_timeline_ready: Mutex::new(None),
                     composer_drafts: Mutex::new(HashMap::new()),
                     timeline_rev: AtomicU64::new(0),
+                    send_epoch: AtomicU64::new(0),
                     resume_generation: AtomicU64::new(0),
                     chat_timeline: Mutex::new(None),
                     subagent_timeline: Mutex::new(None),
@@ -481,12 +483,5 @@ fn parse_conversation_activity_event(event: &Value) -> Option<ConversationActivi
 /// Minimal file logger (GUI subsystem has no console).
 /// `pub(crate)`：header.rs 的 picker `Err` 分支也写入同一日志（此前静默吞错）。
 pub(crate) fn log_diag(msg: &str) {
-    use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(std::env::var("QAQH_WINUI_LOG").unwrap_or_else(|_| ".qaqh-winui.log".into()))
-    {
-        let _ = writeln!(f, "{}", msg);
-    }
+    crate::app_log::write("bridge", msg);
 }

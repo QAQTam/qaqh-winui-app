@@ -4,12 +4,12 @@ use crate::oobe_view;
 use crate::shell_store::normalize_effort;
 use qaqh_fluent::tokens;
 
-pub(crate) fn models_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
+pub(crate) fn models_section(ctx: &SettingsCtx, rows: &mut GroupBuf) {
     let bridge = ctx.bridge.clone();
     let draft = ctx.draft.clone();
     let dirty = ctx.dirty.clone();
     let d = ctx.d.clone();
-    rows.push(section_title("模型提供方"));
+    rows.section("模型提供方");
 
     // ── 加载态：daemon 未响应时显示「加载中」而非错误的「无 provider 目录」 ──
     if !d.loaded {
@@ -194,7 +194,7 @@ pub(crate) fn models_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
 
     // ── Profile 切换器（在 models 区块底部展示并允许快速切换/管理） ──
     if d.loaded && !d.profiles.is_empty() {
-        rows.push(section_title("预设"));
+        rows.section("预设");
         let profile_names = d.profiles.clone();
         let pidx = profile_names
             .iter()
@@ -268,11 +268,11 @@ pub(crate) fn models_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
     }
 }
 
-pub(crate) fn api_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
+pub(crate) fn api_section(ctx: &SettingsCtx, rows: &mut GroupBuf) {
     let draft = ctx.draft.clone();
     let dirty = ctx.dirty.clone();
     let d = ctx.d.clone();
-    rows.push(section_title("API 密钥"));
+    rows.section("API 密钥");
     let key_row: Element = {
         let mut badge = Vec::new();
         if d.api_key_configured {
@@ -344,12 +344,12 @@ pub(crate) fn api_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
     );
 }
 
-pub(crate) fn context_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
+pub(crate) fn context_section(ctx: &SettingsCtx, rows: &mut GroupBuf) {
     let draft = ctx.draft.clone();
     let dirty = ctx.dirty.clone();
     let compact_restore = ctx.compact_restore.clone();
     let d = ctx.d.clone();
-    rows.push(section_title("上下文窗口"));
+    rows.section("上下文窗口");
     const CONTEXT_MIN: f64 = 10000.0;
     const CONTEXT_MAX: f64 = 10_000_000.0;
     // 守卫已升级为「live-draft 对比」（2026-08-25 P0 反馈）：渲染期捕获值在闭包
@@ -517,11 +517,11 @@ pub(crate) fn context_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
     ));
 }
 
-pub(crate) fn subagent_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
+pub(crate) fn subagent_section(ctx: &SettingsCtx, rows: &mut GroupBuf) {
     let draft = ctx.draft.clone();
     let dirty = ctx.dirty.clone();
     let d = ctx.d.clone();
-    rows.push(section_title("子代理"));
+    rows.section("子代理");
     rows.push(field_row(
         "子代理模型",
         text_box(d.sub_model.clone())
@@ -590,7 +590,7 @@ pub(crate) fn subagent_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
             })
             .into(),
     ));
-    rows.push(section_title("默认工具"));
+    rows.section("默认工具");
     if d.tools.is_empty() {
         rows.push(
             text_block("（暂无可用工具）")
@@ -631,12 +631,12 @@ pub(crate) fn subagent_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
     }
 }
 
-pub(crate) fn workspace_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
+pub(crate) fn workspace_section(ctx: &SettingsCtx, rows: &mut GroupBuf) {
     let bridge = ctx.bridge.clone();
     let draft = ctx.draft.clone();
     let dirty = ctx.dirty.clone();
     let d = ctx.d.clone();
-    rows.push(section_title("工具套件运行环境"));
+    rows.section("工具套件运行环境");
     let rendered_ws_idx = WORKSPACE_MODES
         .iter()
         .position(|m| *m == d.workspace_mode)
@@ -681,10 +681,13 @@ pub(crate) fn workspace_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
             .foreground(ThemeRef::SecondaryText)
             .into(),
     );
+    // 模式重启警示 → 原生 InfoBar（warning 横幅，替代手拼 ⚠ 文本行）。
     rows.push(
-        text_block("⚠ 切换模式需重启后端（backend.restart 尚未迁移，保存后下次启动生效）")
-            .font_size(12.0)
-            .foreground(ThemeRef::SystemAttention)
+        InfoBar::new("切换模式需重启后端")
+            .message("backend.restart 尚未迁移：应用模式后重启应用生效。")
+            .warning()
+            .is_open(true)
+            .is_closable(false)
             .into(),
     );
     rows.push(field_row(
@@ -719,14 +722,14 @@ pub(crate) fn workspace_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
     ));
 }
 
-pub(crate) fn appearance_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
+pub(crate) fn appearance_section(ctx: &SettingsCtx, rows: &mut GroupBuf) {
     let bridge = ctx.bridge.clone();
     let draft = ctx.draft.clone();
     let proj_draft = ctx.proj_draft.clone();
     let dirty = ctx.dirty.clone();
     let d = ctx.d.clone();
     let pd = ctx.pd.clone();
-    rows.push(section_title("界面"));
+    rows.section("界面");
     let rendered_theme_idx = match pd.theme.as_str() {
         "light" => 1,
         "dark" => 2,

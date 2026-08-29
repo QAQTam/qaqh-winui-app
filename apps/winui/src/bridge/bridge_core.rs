@@ -158,10 +158,19 @@ pub(crate) struct BridgeCore {
     /// set_active_seed / activate_timeline / navigate 三处副作用前校验，
     /// 过期任务立即返回——只有最新点击能切换会话。
     pub(crate) resume_generation: AtomicU64,
+    /// 用户发送意图代次：spawn_send_message 提交时点递增（同步、不等
+    /// 上传/网络往返）；chat_view 泵比对后 force_tail——发送即滚底
+    /// （对齐 Web 语义），用户此前上滚（Idle）也被覆盖。
+    pub(crate) send_epoch: AtomicU64,
     /// 最近一次 typed timeline 快照（`TimelineSnapshot` + 所属 seed：
     /// 权威 turns 历史，resume 旧对话的数据源；chat_view 泵消费 restore）。
     /// seed 标记防竞态：快速切会话时旧快照晚到不会被灌进新会话。
     pub(crate) chat_timeline: Mutex<Option<(String, TimelineSnapshot)>>,
+    /// 后台转换完成的 UI 交付槽：(seed, 已转换快照, 内容指纹)。
+    /// `cache_timeline_snapshot` 在 tokio blocking 线程做 serde roundtrip
+    /// + 指纹（P1-B2：JSON 建树/解析不占 UI 帧），chat_view 泵经
+    /// `chat_timeline_ready_take` 消费；单槽覆盖语义同 chat_timeline。
+    pub(crate) chat_timeline_ready: Mutex<Option<(String, markdown_winui::TimelineSnapshot, u64)>>,
     /// 子代理面板数据：最近一次拉取的子代理 timeline 快照
     /// （`(sub_seed, TimelineSnapshot)`）。`spawn_fetch_subagent_timeline`
     /// 异步拉取后写入，面板轮询 `subagent_timeline_peek` 消费渲染；

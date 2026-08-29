@@ -278,6 +278,9 @@ impl super::BridgeCore {
         text_files: Vec<ComposerTextFile>,
     ) {
         let core = self.self_arc();
+        // 用户发送意图：同步递增 send_epoch（提交时点，不等上传/网络往返）。
+        // chat_view 泵比对后 force_tail——发送即滚底（对齐 Web 语义）。
+        self.send_epoch.fetch_add(1, Ordering::Relaxed);
         // Uploads can take long enough for the user to switch tabs. The
         // message and its eventual feedback belong to the seed at submit time.
         let seed = self.active_seed();

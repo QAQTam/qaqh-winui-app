@@ -1,11 +1,11 @@
 use super::super::*;
 use crate::diagnostics::{self, Mode};
 
-pub(crate) fn multimodal_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
+pub(crate) fn multimodal_section(ctx: &SettingsCtx, rows: &mut GroupBuf) {
     let draft = ctx.draft.clone();
     let dirty = ctx.dirty.clone();
     let d = ctx.d.clone();
-    rows.push(section_title("多模态"));
+    rows.section("多模态");
     let rendered_mm_enabled = d.mm_enabled;
     rows.push(field_row(
         "启用",
@@ -109,7 +109,7 @@ pub(crate) fn multimodal_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
     ));
 }
 
-pub(crate) fn advanced_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
+pub(crate) fn advanced_section(ctx: &SettingsCtx, rows: &mut GroupBuf) {
     let bridge = ctx.bridge.clone();
     let draft = ctx.draft.clone();
     let proj_draft = ctx.proj_draft.clone();
@@ -122,7 +122,7 @@ pub(crate) fn advanced_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
     let diag_rev = ctx.diag_rev;
     let perm_desc = ctx.perm_desc;
     let export_path = ctx.export_path.clone();
-    rows.push(section_title("通知"));
+    rows.section("通知");
     let rendered_notif = bridge.core().notif_enabled();
     rows.push(field_row(
         "桌面通知",
@@ -145,7 +145,7 @@ pub(crate) fn advanced_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
             .foreground(ThemeRef::SecondaryText)
             .into(),
     );
-    rows.push(section_title("权限控制"));
+    rows.section("权限控制");
     // UAC 安全设置范式：4 档滑杆（离散步进）+ 档位标签 + 当前档说明。
     // permission_level==0（config 未加载/失败）：不渲染滑杆——clamp(1,4)
     // 会把 0 显示成 L1，误导用户以为权限被重置。
@@ -212,7 +212,7 @@ pub(crate) fn advanced_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
                 .into(),
         ));
     }
-    rows.push(section_title("性能"));
+    rows.section("性能");
     let tokenizer_row: Element = {
         let input: Element = text_box(d.tokenizer_path.clone())
             .placeholder_text("path/to/tokenizer.json")
@@ -242,7 +242,7 @@ pub(crate) fn advanced_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
 
     // ── 诊断（纯本地 · 白名单 · 三档采集）────────────────────────
     // 隐私合规是结构性保证：白名单字段、仅性能侧、无系统指纹、默认 ZDR。
-    rows.push(section_title("诊断"));
+    rows.section("诊断");
     let cur_mode = diagnostics::mode();
     let mode_idx = match cur_mode {
         Mode::Full => 0,
@@ -300,23 +300,26 @@ pub(crate) fn advanced_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
                 }
             }
         });
-    let export_status: Element = match export_path.clone() {
-        Some(p) => text_block(format!("已导出：{p}"))
-            .font_size(11.0)
-            .foreground(ThemeRef::SecondaryText)
-            .into(),
-        None => text_block(status_text)
-            .font_size(11.0)
-            .foreground(ThemeRef::SecondaryText)
-            .into(),
-    };
-    rows.push(field_row(
-        "导出诊断包",
-        vstack((export_btn, export_status)).spacing(4.0).into(),
-    ));
+    rows.push(field_row("导出诊断包", export_btn.into()));
+    match export_path.clone() {
+        Some(p) => rows.push(
+            InfoBar::new("诊断包已导出")
+                .message(p)
+                .success()
+                .is_open(true)
+                .is_closable(false)
+                .into(),
+        ),
+        None => rows.push(
+            text_block(status_text)
+                .font_size(11.0)
+                .foreground(ThemeRef::SecondaryText)
+                .into(),
+        ),
+    }
 }
 
-pub(crate) fn remote_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
+pub(crate) fn remote_section(ctx: &SettingsCtx, rows: &mut GroupBuf) {
     let bridge = ctx.bridge.clone();
     let remote_url = ctx.remote_url.clone();
     let remote_token = ctx.remote_token.clone();
@@ -324,7 +327,7 @@ pub(crate) fn remote_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
     let set_remote_url = ctx.set_remote_url.clone();
     let set_remote_token = ctx.set_remote_token.clone();
     let set_remote_status = ctx.set_remote_status.clone();
-    rows.push(section_title("远端 daemon（临时跨端模式）"));
+    rows.section("远端 daemon（临时跨端模式）");
     let current = bridge.core().remote_profile_snapshot();
     let default_status = match &current {
         Some(p) => format!("当前远端：{}（路径显示为 //ip/…）", p.base_url),
@@ -378,22 +381,28 @@ pub(crate) fn remote_section(ctx: &SettingsCtx, rows: &mut Vec<Element>) {
                 set_remote_status.call("已清除远端档案，正在切回本地…".to_string());
             }
         });
-    let status_text = if remote_status.is_empty() {
-        default_status
-    } else {
-        remote_status.clone()
-    };
     rows.push(field_row(
         "操作",
         vstack((
             hstack((connect_btn, disconnect_btn)).spacing(8.0),
-            text_block(status_text)
+            text_block(default_status)
                 .font_size(11.0)
                 .foreground(ThemeRef::SecondaryText),
         ))
         .spacing(6.0)
         .into(),
     ));
+    // 操作反馈（瞬时消息）→ 原生 InfoBar；常态说明保留上方文本行。
+    if !remote_status.is_empty() {
+        rows.push(
+            InfoBar::new("远端 daemon")
+                .message(remote_status)
+                .informational()
+                .is_open(true)
+                .is_closable(false)
+                .into(),
+        );
+    }
     rows.push(
         text_block(
             "远端模式下：文件与工具操作都发生在 daemon 所在机器；路径仅按 //ip/路径 显示，不当作本机路径使用。",

@@ -42,6 +42,12 @@ pub fn chat_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
     let force_tail_version = cx.use_ref::<Option<u64>>(None);
     // 滚动请求节流基准（live 流式限频，见 SCROLL_REQUEST_THROTTLE）。
     let last_scroll_request = cx.use_ref::<std::time::Instant>(std::time::Instant::now());
+    // 用户发送意图代次基线：泵比对 send_epoch 变化后 force_tail
+    // （发送即滚底，对齐 Web；用户此前上滚 Idle 也被覆盖）。
+    let last_send_epoch = cx.use_ref::<u64>(0);
+    // 快照指纹（上次已恢复内容）：canonical 刷新与已恢复内容一致时跳过
+    // JSON roundtrip + 全量 restore——切换卡顿的单帧大头（P0-B1）。
+    let last_restored_fp = cx.use_ref::<Option<(String, u64)>>(None);
     // deferred（快照 seed 不匹配）日志限频：vsync 泵每帧都会命中，
     // 不节流会刷爆日志（spawn_timeline_refresh 本身有 1s 节流）。
     // UI 提交代次与 transport rev 解耦：seed、快照、分页和事件批次都可
@@ -92,6 +98,7 @@ pub fn chat_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
         let last_scroll_request = last_scroll_request.clone();
         let scroll_version = scroll_version.clone();
         let force_tail_version = force_tail_version.clone();
+        let last_send_epoch = last_send_epoch.clone();
         let follow_state = follow_state.clone();
         let last_scale_log = last_scale_log.clone();
         let pending_anchor = pending_anchor.clone();
@@ -119,6 +126,8 @@ pub fn chat_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
                 let last_scroll_request = last_scroll_request.clone();
                 let scroll_version = scroll_version.clone();
                 let force_tail_version = force_tail_version.clone();
+                let last_send_epoch = last_send_epoch.clone();
+                let last_restored_fp = last_restored_fp.clone();
                 let render_generation = render_generation.clone();
                 let set_render_generation = set_render_generation.clone();
                 let last_live_render = last_live_render.clone();
@@ -189,6 +198,8 @@ pub fn chat_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
                             cache_store(previous_seed, cached);
                         }
                         *last_seed.borrow_mut() = seed.clone();
+                        // 指纹随种子切换失效：新会话的首次快照必须真正 restore。
+                        *last_restored_fp.borrow_mut() = None;
                         // UI 侧尚未归并的旧会话事件不能跨 seed 留存。bridge
                         // 队列有 seed 过滤，但本地 deferred 队列也必须清空。
                         deferred_events.borrow_mut().clear();
@@ -213,6 +224,18 @@ pub fn chat_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
                             bridge.core().spawn_timeline_refresh(&seed);
                         }
                         log_diag(&format!("chat_view: switched to seed {seed}"));
+                    }
+                    // 发送即滚底（对齐 Web）：spawn_send_message 在提交时点
+                    // 递增 send_epoch，泵比对后走 force_tail 握手（与 restore
+                    // 同路径）。发送本身就是「回到最新」的明确意图，覆盖 Idle。
+                    let send_epoch = bridge.core().send_epoch_snapshot();
+                    if send_epoch != *last_send_epoch.borrow() {
+                        *last_send_epoch.borrow_mut() = send_epoch;
+                        *scroll_version.borrow_mut() += 1;
+                        *force_tail_version.borrow_mut() = Some(*scroll_version.borrow());
+                        *follow_state.borrow_mut() = FollowState::Following;
+                        *render_generation.borrow_mut() += 1;
+                        set_render_generation.call(*render_generation.borrow());
                     }
                     // drain 快速路径：8ms 下限在 60Hz/120Hz 屏上逐帧放行，
                     // 避免 32ms 攒批造成可见的成批吐字。deferred 非空时仍
@@ -239,9 +262,25 @@ pub fn chat_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
                     //    active seed 的快照——原 take 语义消费即弃，丢弃后
                     //    daemon 不重推，快照永久丢失 → ChatView 永远停在
                     //    "加载会话…"。
-                    if let Some(snap) = bridge.core().chat_timeline_take(&seed) {
-                        let snap_view =
-                            chat_adapter::timeline_snapshot(&snap).unwrap_or_default();
+                    if let Some((snap_view, fp)) =
+                        bridge.core().chat_timeline_ready_take(&seed)
+                    {
+                        // P0-B1 指纹去重：canonical 快照常与已恢复内容一致
+                        // （Fix B 缓存命中后的权威刷新 / 重拉核实）。命中则
+                        // 跳过 restore——transcript 由 timeline 事件单调
+                        // 演进，内容 ⊇ 该快照，重放只会倒退。转换已在
+                        // tokio blocking 线程完成（P1-B2），此处零 JSON 成本。
+                        if *last_restored_fp.borrow() == Some((seed.clone(), fp)) {
+                            if recovering.borrow().as_ref() == Some(&seed) {
+                                *recovering.borrow_mut() = None;
+                                log_diag("chat_view: recovery overlay dismissed (fp hit)");
+                            }
+                            // 重拉核实路径的加载态同样由此终结。
+                            *last_restored_seed.borrow_mut() = seed.clone();
+                            *empty_snapshot_verifications.borrow_mut() = 0;
+                            log_diag("chat_view: snapshot fingerprint matched, restore skipped");
+                            return;
+                        }
                         let n = snap_view.turns.len();
                         // BUG-F1：n==0 的空快照不得直接作为「已恢复」凭据——
                         // 单槽里可能驻留会话创建时期的过期空快照，直接采信会
@@ -251,10 +290,14 @@ pub fn chat_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
                         let verified_empty = *empty_snapshot_verifications.borrow()
                             >= EMPTY_SNAPSHOT_VERIFY_MAX;
                         if n > 0 || verified_empty {
+                            // P2-D 依据埋点：restore 均摊耗时超过 ~30ms 再考虑分帧。
+                            let restore_started = std::time::Instant::now();
                             let mut transcript = transcript.borrow_mut();
                             transcript.restore(&snap_view);
                             drop(transcript);
+                            let restore_ms = restore_started.elapsed().as_millis();
                             *last_restored_seed.borrow_mut() = seed.clone();
+                            *last_restored_fp.borrow_mut() = Some((seed.clone(), fp));
                             *empty_snapshot_verifications.borrow_mut() = 0;
                             // BUG-004 决策：恢复 = 回到最新底部（force_tail），
                             // 不恢复上次浏览位置。
@@ -273,7 +316,7 @@ pub fn chat_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
                             set_render_generation.call(*render_generation.borrow());
                             if n > 0 {
                                 log_diag(&format!(
-                                    "chat_view: restored {n} turns for {seed} (force_tail)"
+                                    "chat_view: restored {n} turns for {seed} (force_tail, {restore_ms}ms)"
                                 ));
                             } else {
                                 log_diag(&format!(

@@ -46,16 +46,9 @@ use qaqh_fluent::{motion, tokens};
 use crate::bridge::Bridge;
 use crate::shell_store::{DashboardSnapshot, DashboardTask, SessionDetail, UsageInfo};
 
-/// 诊断日志（同 main.rs log_diag 约定：GUI 子系统无控制台，写文件）。
+/// 诊断日志（统一落 `log/info_panel/`，见 [`crate::app_log`] 模块文档）。
 fn log_diag(msg: &str) {
-    use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(std::env::var("QAQH_WINUI_LOG").unwrap_or_else(|_| ".qaqh-winui.log".into()))
-    {
-        let _ = writeln!(f, "[info_panel] {msg}");
-    }
+    crate::app_log::write("info_panel", msg);
 }
 
 /// 快照轮询间隔（同 sidebar / home_view）。

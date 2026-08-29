@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use qaqh_fluent::{motion, tokens};
-use serde_json::json;
 
 use crate::bridge::{Bridge, SettingsProjection};
 use crate::shell_store::{SettingsSnapshot, normalize_effort};
@@ -222,7 +221,8 @@ pub fn settings_view(cx: &mut RenderCx, bridge: Arc<Bridge>, category: String) -
     // 本视图只渲染选中分类的内容面板（category 由 main.rs 注入）。
 
     // ── 右侧表单区（按分类）────────────────────────────────────────
-    let mut rows: Vec<Element> = Vec::new();
+    // GroupBuf：section 函数照常 push，finish 时每组包原生 Expander 卡片。
+    let mut rows = GroupBuf::new();
 
     // models：provider / endpoint / baseUrl / model
 
@@ -276,39 +276,51 @@ pub fn settings_view(cx: &mut RenderCx, bridge: Arc<Bridge>, category: String) -
         remote_section(&ctx, &mut rows);
     }
     // ── 底部：保存按钮 + 状态 ───────────────────────────────────────    // ── 底部：保存按钮 + 状态 ───────────────────────────────────────
-    let footer: Element = {
-        let saved_text: Element = match saved_at {
-            Some(t) if t.elapsed() < Duration::from_secs(3) => text_block("已保存 ✓")
-                .font_size(12.0)
-                .foreground(ThemeRef::SystemSuccess)
-                .into(),
-            _ => text_block("").into(),
-        };
-        let error_text: Element = match save_error.clone() {
-            Some(e) => text_block(e)
-                .font_size(12.0)
-                .foreground(ThemeRef::SystemCritical)
-                .into(),
-            None => text_block("").into(),
-        };
-        hstack((
-            button("保存设置").accent().on_click({
-                let on_save = on_save.clone();
-                move || on_save()
-            }),
-            saved_text,
-            error_text,
-        ))
-        .spacing(12.0)
-        .into()
+    // 原生 InfoBar 承载保存结果（P0-B3 rev 门控消费语义不变）：
+    // 成功 = success（沿用 3 秒窗口派生显示）；失败 = error 可手动关闭
+    // （on_closed 清 save_error，避免关闭后被 prop 重开）。
+    let save_banner: Element = if let Some(e) = save_error.clone() {
+        InfoBar::new("保存失败")
+            .message(e)
+            .error()
+            .is_open(true)
+            .is_closable(true)
+            .on_closed({
+                let set_save_error = set_save_error.clone();
+                move || set_save_error.call(None)
+            })
+            .into()
+    } else if saved_at.is_some_and(|t| t.elapsed() < Duration::from_secs(3)) {
+        InfoBar::new("已保存")
+            .success()
+            .is_open(true)
+            .is_closable(false)
+            .into()
+    } else {
+        text_block("").into()
     };
+    let footer: Element = vstack((
+        save_banner,
+        hstack((button("保存设置").accent().on_click({
+            let on_save = on_save.clone();
+            move || on_save()
+        }),))
+        .spacing(12.0),
+    ))
+    .spacing(tokens::SPACE_2)
+    .into();
 
     // ── 表单区（rows 每行带 key：`{category}-{idx}`）────────────────
     // keyed reconcile：跨分类 key 全不同 → 切换分类时整行干净重建（杜绝
     // 同 index 类型跳变（grid↔TextBlock）导致的控件复用错位）；同分类内
     // 重渲染 key 相同 → 原地更新（表单输入状态保持）。
     // 跨分类 key 全不同；动画挂在整页而非每一行，避免密集表单产生瀑布闪烁。
+    // ── 表单区（rows 每组一张原生 Expander 卡片）────────────────
+    // keyed reconcile：跨分类 key 全不同 → 切换分类时整组干净重建；
+    // 同分类内重渲染 key 相同 → 原地更新（表单输入状态保持）。
+    // 动画挂在整页而非每一组，避免密集表单产生瀑布闪烁。
     let rows: Vec<Element> = rows
+        .finish()
         .into_iter()
         .enumerate()
         .map(|(i, el)| el.with_key(format!("{category}-{i}")))

@@ -54,16 +54,9 @@ const MONO_FONT: &str = qaqh_fluent::tokens::CODE_FONT_FAMILY;
 /// 遮罩透明度（半透明黑 scrim，拦截命中 + 保留上下文可见）。
 const SCRIM_ALPHA: u8 = 120;
 
-/// 诊断日志（同 main.rs log_diag 约定：GUI 子系统无控制台，写文件）。
+/// 诊断日志（统一落 `log/interaction/`，见 [`crate::app_log`] 模块文档）。
 fn log_diag(msg: &str) {
-    use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(std::env::var("QAQH_WINUI_LOG").unwrap_or_else(|_| ".qaqh-winui.log".into()))
-    {
-        let _ = writeln!(f, "[interaction_overlay] {msg}");
-    }
+    crate::app_log::write("interaction", msg);
 }
 
 /// 小标题（eyebrow：11px 600 muted，同 info_panel `section_heading`）。

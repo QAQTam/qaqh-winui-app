@@ -7,14 +7,9 @@ use std::time::Duration;
 
 use windows_reactor::{DispatcherTimer, HookRef};
 
-/// 【ask 弹不出诊断】轮询器日志（同 bridge::log_diag 路径策略）。
+/// 【ask 弹不出诊断】轮询器日志（统一落 `log/shell/`，见 app_log 模块文档）。
 fn log_diag(msg: &str) {
-    use std::io::Write;
-    let _ = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(std::env::var("QAQH_WINUI_LOG").unwrap_or_else(|_| ".qaqh-winui.log".into()))
-        .and_then(|mut f| writeln!(f, "{msg}"));
+    crate::app_log::write("shell", msg);
 }
 
 /// 轮询 `snapshot()` 的 `(state, rev)`，rev 变化时调用 `apply(state)`。

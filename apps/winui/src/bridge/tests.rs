@@ -175,6 +175,8 @@ mod tests {
             composer_drafts: Mutex::new(HashMap::new()),
             timeline_rev: AtomicU64::new(0),
             resume_generation: AtomicU64::new(0),
+            send_epoch: AtomicU64::new(0),
+            chat_timeline_ready: Mutex::new(None),
             chat_timeline: Mutex::new(None),
             subagent_timeline: Mutex::new(None),
             subagent_timeline_fetching: Mutex::new(HashSet::new()),

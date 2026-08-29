@@ -1,7 +1,7 @@
 {
   "name": "qaqh-winui-app",
   "private": true,
-  "version": "0.0.0-alpha.0",
+  "version": "1.0.0",
   "description": "QAQ-Harness Windows desktop layer — native WinUI3 shell, installer and updater (backend lives in QAQ-Harness monorepo)"
 }
 

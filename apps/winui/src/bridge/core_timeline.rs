@@ -198,9 +198,29 @@ impl super::BridgeCore {
         // ——undo_disabled 判定源。timeline 快照即权威 turns（block 模型）。
         let turns = snapshot.turns.len();
         let last_turn_id = snapshot.turns.last().map(|t| t.turn_id.clone());
+        // 后台转换任务的工作副本（原 snapshot move 进 raw 缓存槽）。
+        let snap_clone = snapshot.clone();
         // BUG-003：move 进缓存（零拷贝），先取衍生值再 move。
         *self.chat_timeline.lock().unwrap_or_else(|e| e.into_inner()) =
             Some((seed.clone(), snapshot));
+        // P1-B2：serde roundtrip + 指纹移交 tokio blocking 线程——JSON Value
+        // 建树/解析是切换帧的最大单点成本，不占 UI 线程。快照全 owned 类型
+        // （Send）；单槽覆盖语义与 raw 槽一致（新快照晚到覆盖旧转换结果）。
+        // SHARED_CORE 未初始化（单测直构）时跳过派发：就绪槽保持空，
+        // UI 泵走「快照缺失 → 重拉」既有路径，语义不变。
+        if let Some(core) = self.self_arc_opt() {
+            let ready_seed = seed.clone();
+            let _ = qaqh_client::runtime_handle().spawn_blocking(move || {
+                let fp = crate::chat_adapter::snapshot_fingerprint(&snap_clone);
+                let Some(converted) = crate::chat_adapter::timeline_snapshot(&snap_clone) else {
+                    return;
+                };
+                *core
+                    .chat_timeline_ready
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = Some((ready_seed, converted, fp));
+            });
+        }
         self.header_turns
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -214,6 +234,22 @@ impl super::BridgeCore {
         }
         drop(last_turn_ids);
         self.refresh_header();
+    }
+
+    /// 消费后台转换完成的快照（seed 校验：不匹配保留，同 raw 槽 stale 语义）。
+    pub(crate) fn chat_timeline_ready_take(
+        &self,
+        seed: &str,
+    ) -> Option<(markdown_winui::TimelineSnapshot, u64)> {
+        let mut slot = self
+            .chat_timeline_ready
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if slot.as_ref()?.0 == seed {
+            slot.take().map(|(_, snap, fp)| (snap, fp))
+        } else {
+            None
+        }
     }
 
     /// 主动重拉指定 seed 的 timeline 快照（快照 seed 不匹配时的恢复路径）。

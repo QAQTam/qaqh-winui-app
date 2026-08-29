@@ -6,6 +6,7 @@
 
 #![windows_subsystem = "windows"]
 
+mod app_log;
 mod bridge;
 mod chat_adapter;
 mod chat_view;
@@ -609,14 +610,7 @@ fn app(cx: &mut RenderCx) -> Element {
 
 /// Minimal file logger for headless diagnosis (GUI subsystem has no console).
 fn log_diag(msg: &str) {
-    use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(std::env::var("QAQH_WINUI_LOG").unwrap_or_else(|_| ".qaqh-winui.log".into()))
-    {
-        let _ = writeln!(f, "{}", msg);
-    }
+    crate::app_log::write("app", msg);
 }
 
 fn main() -> windows_reactor::Result<()> {

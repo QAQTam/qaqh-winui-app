@@ -324,7 +324,7 @@ pub fn composer_bar(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
             bridge.spawn_set_permission(level);
         }
     });
-    // 工具模式六选一（标准/极限·8/极限·6/极限·4/极简/创造）；创造模式用预设基底 custom_tools。
+    // 工具模式五选一（标准/极限·8/极限·6/极限·4/创造；minimal:dsh 已移除）；创造模式用预设基底 custom_tools。
     let on_tool_mode: Arc<dyn Fn(i32) + 'static> = Arc::new({
         let bridge = bridge.clone();
         move |index: i32| {
@@ -638,7 +638,7 @@ pub fn composer_bar(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
         .automation_id("composer-permission-level")
         .into();
 
-    // 工具模式六选一（标准/极限·8/极限·6/极限·4/极简/创造；PLAN-TOOL-MODES.md）。
+    // 工具模式五选一（标准/极限·8/极限·6/极限·4/创造；PLAN-TOOL-MODES.md，minimal:dsh 已移除）。
     // 空态（新会话 meta.tool_mode 为空）渲染为 standard(0) 而非 -1：-1 会被 WinUI
     // 规范化触发程序化 SelectionChanged，而旧守卫把所有空态 SelectionChanged 都当
     // 同步事件丢弃，导致空态会话的工具模式选择永久失效（BUG-017）。放行/跳过判定

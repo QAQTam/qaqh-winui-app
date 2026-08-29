@@ -67,9 +67,69 @@ fn field_row(label: &str, control: Element) -> Element {
     qaqh_fluent::settings_card(label, "", control)
 }
 
-/// 分类标题（h2 语义）。
-fn section_title(text: &str) -> Element {
-    qaqh_fluent::settings_section_header(text, "")
+/// 分组卡片：WinUI 原生 Expander（header=组名，默认展开）。
+///
+/// 展开态为非受控：reactor prop diff 仅在值变化时写入——用户点 chevron
+/// 折叠后，重渲染（prop 仍 true）不会把卡片弹回；切换分类时 keyed 重建、
+/// 复位展开。组内字段值全部受控于 draft 草稿，折叠期内容卸载不丢值。
+fn expander_group(title: &str, rows: Vec<Element>) -> Element {
+    // CRASH-BISECT（临时）：14:31 dump 实锤崩溃链 Expander::OnApplyTemplate
+    // → VSM GoToState → Binding 重连 → MuxGetActivationFactory → 80040111。
+    // 摘除 Expander 包装验证归因；结论后恢复原生实现。
+    let _ = title;
+    vstack(rows).spacing(qaqh_fluent::tokens::SPACE_2).into()
+}
+
+/// 设置页分组缓冲：section 函数照常 `rows.push(...)`，组边界改调
+/// [`GroupBuf::section`]；[`GroupBuf::finish`] 统一把每组包进原生
+/// Expander 卡片（PLAN.md「Expander 卡片骨架」）。
+///
+/// 设计动机：9 个 section 函数体内几十处 `rows.push(...)` 零改动，
+/// 只换签名与组边界行——原生化改动的 diff 面最小化。
+pub(crate) struct GroupBuf {
+    /// 当前组标题（None = 尚未开组，行直通输出）。
+    title: Option<String>,
+    group: Vec<Element>,
+    out: Vec<Element>,
+}
+
+impl GroupBuf {
+    pub(crate) fn new() -> Self {
+        Self {
+            title: None,
+            group: Vec::new(),
+            out: Vec::new(),
+        }
+    }
+
+    /// 开启新组（组名成为 Expander header；上一个组就此封口）。
+    pub(crate) fn section(&mut self, title: &str) {
+        if let Some(t) = self.title.take() {
+            let group = std::mem::take(&mut self.group);
+            self.out.push(expander_group(&t, group));
+        }
+        self.title = Some(title.to_string());
+    }
+
+    /// 参数取具体 Element 而非 Into：原 Vec<Element>::push 的调用点
+    /// 全部产出 Element（含大量 `.into()` 尾缀），泛型入参会让这些
+    /// `.into()` 的目标类型无法推断（E0283）。
+    pub(crate) fn push(&mut self, el: Element) {
+        if self.title.is_some() {
+            self.group.push(el);
+        } else {
+            self.out.push(el);
+        }
+    }
+
+    /// 封口末组，输出全部行（组 = Expander 卡片）。
+    pub(crate) fn finish(mut self) -> Vec<Element> {
+        if let Some(t) = self.title.take() {
+            let group = std::mem::take(&mut self.group);
+            self.out.push(expander_group(&t, group));
+        }
+        self.out
+    }
 }
 
 /// 设置页各分类区块共享的渲染上下文。

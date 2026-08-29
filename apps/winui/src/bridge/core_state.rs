@@ -16,6 +16,12 @@ impl super::BridgeCore {
             .clone()
     }
 
+    /// 后台任务用 self Arc；SHARED_CORE 未初始化（单测直构 BridgeCore）
+    /// 时返回 None，调用方跳过后台派发（就绪槽保持空，UI 走重拉路径）。
+    pub(crate) fn self_arc_opt(&self) -> Option<Arc<BridgeCore>> {
+        SHARED_CORE.get().cloned()
+    }
+
     // ── XAML 侧栏（shell_store 投影）──────────────────────────────
 
     /// (items, rev) 快照：UI 侧 timer 比对 rev 决定是否刷新列表。
@@ -34,6 +40,11 @@ impl super::BridgeCore {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone()
+    }
+
+    /// 用户发送意图代次（send_epoch 快照）：chat_view 泵比对后 force_tail。
+    pub(crate) fn send_epoch_snapshot(&self) -> u64 {
+        self.send_epoch.load(Ordering::Relaxed)
     }
 
     pub(crate) fn set_active_seed(&self, seed: &str) {
