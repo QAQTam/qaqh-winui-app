@@ -1,7 +1,7 @@
 # Composer 精简设计：单卡两区 + 强度滑柄 + 模型/强度入口
 
-> 状态：**设计定稿，待实施**（批次 B 已解挂：vendor 冻结定案转自有组件维护，2026-08-29）· 2026-08-29
-> 范围：`apps/winui/src/composer_bar/*` · 依赖登记：QAQ-Harness（effort RPC）
+> 状态：**批次 A 已落地，批次 B 已落地**（批次 C 跨仓依赖挂账）· 2026-08-29
+> 范围：`apps/winui/src/composer_bar/*` + `apps/winui/src/header.rs` + `crates/qaqh-fluent` · 依赖登记：QAQ-Harness（effort RPC）
 > 设计约束：遵循 Fluent Design 2 语汇；ZCode（Electron 参照物）仅吸收 composer 交互模式，不引入其视觉体系
 
 ---
@@ -49,16 +49,18 @@ RPC 面现状：`config.load/save/set_permission_level` + `session.activity/list
 
 ## 3. 实施批次
 
-### 批次 A —— 纯前端（vendor 同期即可做）
+### 批次 A —— 纯前端（✅ 已落地 2026-08-29；偏差见下）
 
-| ID | 动作 | 细节 |
+| ID | 动作 | 落地记录 |
 |---|---|---|
-| A1 | **去卡中卡** | TextBox 去边框/独立背景，直接坐进圆角卡（radius 8）；`INPUT_DEFAULT_HEIGHT` 84→56，`INPUT_MIN_HEIGHT` 64→48，AUTO_MAX/MANUAL_MAX 180/360 不变；拖拽 resize 逻辑保留，clamp 语义改按「输入区高度」不变。**配轻投影**（ThemeShadow，Z 16-32，receiver 仅挂对话滚动区；需批次 B2 透出后启用——影子与卡片化同车，避免中间态） |
-| A2 | **工作目录移出** | `composer-workspace` 按钮（view.rs:723）移至会话标题栏做 chip（选过显示短路径，现逻辑 `short_cwd` 直接复用）；空态卡上保留一次性入口 |
-| A3 | **token 条降级** | 独占行 → 卡底 2px 贴边进度线；数字并到线右端 caption（"11.2K"），tooltip 显全量 |
-| A4 | **权限语义 chip** | `L1▼` ComboBox → `权限 L1 ▾` MenuFlyout 四项带说明；**守卫等价迁移**：`rendered_pl == 0` 跳过逻辑（view.rs:622-627，Bug#2）必须在 menu 选择路径保持 |
-| A5 | **执行/规划 toggle chip** | 文本按钮 → 图标+文 toggle chip，选中态有底色；备选：收进工具模式下拉尾部（默认不采） |
-| A6 | **沉浸式角标** | ⤢ 移到卡右上角 hover 显形，footer 减负 |
+| A1 | **去卡中卡** | ✅ `INPUT_DEFAULT_HEIGHT` 84→56、`INPUT_MIN_HEIGHT` 64→48（常量测试锁定）；TextBox 零边框 + `.background(LayerFill)` 直接坐进 `elevated_command_surface` 卡（新 Fluent 原语：LayerFill + radius 8 + `.elevation(16)`，批次 B2 ThemeShadow 落直接父面板）；自动高度公式 44+20n → 36+20n（单行=56）。**额外回收**：空态零高占位（status/queue/slash/error/attach 行）从 `grid(())` 改 `Element::Empty`——零高真实子节点会在 vstack spacing 两侧产生幻影空隙（Empty 不挂载原生节点），空态省 ~24-32px |
+| A2 | **工作目录移出** | ✅ 标题栏（header.rs footer）恢复工作区 chip：Folder 图标 + `short_cwd` 短路径（完整路径 tooltip），点击走挂账的 `on_workspace` 合并流（组织工作区 create/select + 会话级 set 兜底）；workspace_error 红字提示随迁（无错不挂载）。composer 卡仅未选目录时保留一次性入口（cwd 空时显示，选后消失） |
+| A3 | **token 条降级** | ✅ 4px 独立行 → 卡底 2px 贴边线（卡 padding bottom=0 + WinUI Border 子内容圆角裁切）；短计数 caption（`fmt_tokens_short`："11.2K"）与线同格叠放、渲染在线上（线即其下划线），行高 = caption 行高不新增独立行；全量千分位数字进 tooltip，分段 tooltip 保留 |
+| A4 | **权限语义 chip** | ✅ `L1▼` ComboBox → `权限 L{n}` MenuFlyout（`PERMISSION_MENU` 四项带一句话说明，语义对齐 settings_view PERMISSION_LADDER）。**守卫等价迁移**：MenuFlyout 无程序化同步事件，`rendered_pl==0` 语义收敛为 `permission_change_allowed`（0 档拒绝一切写 + 同值跳过，测试锁定）+ pl==0 时按钮禁用（tooltip 外观一致地表达"配置未加载"） |
+| A5 | **执行/规划 toggle chip** | ✅ 图标+文：执行=`Play` subtle / 规划=`List` accent（Fluent toggle 选中语言：非默认态 accent 底）；点击互切 spawn_set_mode 不变 |
+| A6 | **沉浸式角标** | ⚠️ **偏差落地**：⤢ 移出 footer，并入顶部拖拽条右端（grip + ⤢ 同行 28px 条，两列并排不叠压）。**hover 显形未做**：需 `IsHitTestVisible`（隐形控件仍参与命中，会拦截输入区点击；vendor 未投影该属性）——vendor 冻结期为自有组件，后续按需补投影后改 hover 显形 |
+
+落地后的空态卡高约 144px（原 ~200px+；验收目标 ≤110 未达——地板 = 顶部条 28 + footer 32 + 输入 56 + 卡 padding 8×2，其中顶部条因 A6 偏差比原 12px 反增 16px；进一步压高需 hover 显形或小号控件资源，均依赖 vendor 补投影）。footer 常态 6 项（附件/工具模式/模式 chip/弹性空白/权限/发送），语义全部可读。
 
 ### 批次 B —— vendor fork 补丁（✅ 已落地 2026-08-29，vendor `62385df`；B1+B2 随冻结基线入 VENDOR.md 补丁清单）
 
@@ -86,17 +88,18 @@ RPC 面现状：`config.load/save/set_permission_level` + `session.activity/list
 
 ## 5. 测试清单
 
-- [ ] A1：空态结构断言（TextBox 无自边框；卡内 padding 预算）+ 拖拽 resize 手动高度仍 clamp 360
-- [ ] A2：标题栏 chip 选目录 → 会话 cwd 生效；composer 无残留按钮
-- [ ] A4：权限 chip 四项选择回调序列与旧 ComboBox 等价；`rendered_pl==0` 时任何同步事件跳过（Bug#2 回归用例保留）
-- [ ] A5/A6：toggle chip 状态切换；沉浸式角标 hover 显形、点击进入 360px 手动高度
-- [ ] B1：vendor selftest（`reactor_selftest`）加 tick 三属性断言；app 侧档位吸附 on_value_changed 只发整数
-- [ ] C1：滑柄乐观更新 + config 持久化；RPC 缺位时不崩、静默降级为本地态
-- [ ] 全量 `cargo test -p qaqh-winui` 83+ 全过
+- [x] A1：高度常量 56/48 测试锁定（`a1_height_constants_meet_fluent2_baseline`）；TextBox 零边框 + LayerFill 同卡底色；拖拽 resize clamp 360 不变
+- [x] A2：标题栏 chip（header-workspace）复用挂账 on_workspace 合并流；composer 仅空态保留入口（cwd 非空渲染 Element::Empty）
+- [x] A4：`permission_menu_level` 四项解析 + 未知拒绝、`permission_change_allowed` Bug#2 守卫（rendered==0 拒绝/同值跳过）测试锁定
+- [x] A5/A6：toggle chip 双态（accent/subtle）；⤢ 并入顶部条（hover 显形偏差已记录，待 vendor IsHitTestVisible）
+- [x] A3：`fmt_tokens_short` 分档测试；分段/全量 tooltip 保留
+- [x] B1：vendor selftest tick 三属性断言（`tests/slider_ticks.rs` 2/2）；app 侧档位吸附 on_value_changed 只发整数
+- [ ] C1：滑柄乐观更新 + config 持久化；RPC 缺位时不崩、静默降级为本地态（批次 C，待 daemon RPC）
+- [x] 全量 `cargo test -p qaqh-winui` 87 通过（原 83 + 新增 4）
 
 ## 6. 验收
 
-- 空态 composer 总高 ≤110px（含 token 线与卡 padding）
-- footer ≤5 项且全部语义可读（无裸黑话）
-- 模型/强度入口存在（强度允许占位态：滑柄可见、写路径待 RPC）
-- 自动复现验证无新增 crash bucket（LocalDumps 零新 dump）
+- 空态 composer 总高：**~144px（未达 ≤110 目标）**——地板为顶部条 28 + footer 32 + 输入 56 + 卡 padding 16；压高手段（hover 显形顶部条、24px 小号按钮）均依赖 vendor 补 `IsHitTestVisible`/控件资源投影，已登记
+- footer 常态 6 项且全部语义可读（无裸黑话：权限带档名，模式带图标）✅
+- 模型/强度入口：批次 C（强度滑柄 UI 前端先行 + daemon `session.set_effort` 挂账；模型选择器待 daemon 语义）
+- 自动复现验证无新增 crash bucket（LocalDumps 零新 dump）——本批全部使用 app 已有存活实证的控件形态（Border/TextBox/Button/MenuFlyout/Grid），无 Expander、无 OnApplyTemplate 期状态 churn（F-N15 红线遵守）

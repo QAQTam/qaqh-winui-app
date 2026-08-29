@@ -3,8 +3,8 @@
 //! 布局：
 //!   TitleBar（SetTitleBar 拖拽区，host 自动接线 host.rs:277-288）
 //!   ├── title 槽：TextBlock（会话标题 / 视图名，shell.header 推送）
-//!   └── footer 槽：hstack( ①workspace ②location ③console ┃ ④info ⑤undo ⑥compact )
-//!        —— ⑧pet 不渲染（壳 stub 恒 false，规划决策）
+//!   └── footer 槽：hstack( ①workspace chip + 错误提示 ┃ ②compact + 终态 chip ③refresh )
+//!        （A2：工作目录 chip 自 composer footer 迁入；info/undo/pet 不渲染）
 //!
 //! 状态：timer 轮询 `core.header_snapshot()` rev（同 sidebar 500ms 模式，
 //! 经 `shell::poll_rev` helper，P-4）。
@@ -17,6 +17,7 @@ use std::time::Duration;
 use windows_reactor::*;
 
 use crate::bridge::{Bridge, HeaderState, log_diag};
+use crate::composer_bar::short_cwd;
 
 /// 标题栏高度（PLAN-NATIVE-UI.md 布局：row 0 = 48px）。
 pub const HEADER_HEIGHT: f64 = 48.0;
@@ -123,10 +124,8 @@ pub fn header(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
     // WebView 移除后无需回传 Web——轮询与 emit_theme_changed 一并删除。
 
     // ── 点击分发（①②壳直接；③-⑥ 直连动作，协议请求 Rust 直发）──
-    // 合并方案：左侧工作区为唯一入口（先选工作区再创建会话）。
-    // 顶部按钮不再直调 `workspace.set`（会话级目录），改为代理到
-    // 组织工作区：选中/创建组织工作区 + 会话级 set 兜底，保证两处同源。
-    #[allow(unused_variables)]
+    // 合并方案：composer 卡与标题栏共用工作区入口（A2，composer-streamline）：
+    // 选目录 → 选中/创建组织工作区 + 会话级 set 兜底，保证两处同源。
     let on_workspace = {
         let bridge = bridge.clone();
         move || {
@@ -221,50 +220,47 @@ pub fn header(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
         .vertical_alignment(VerticalAlignment::Center)
         .into();
     let en = lang == "en";
-    #[allow(unused_variables)]
     let workspace_label = if en {
         "Choose workspace"
     } else {
         "选择工作区"
     };
-    // 工作区路径只读显示（替代原「在资源管理器中打开」按钮）：当前选择
-    // 一目了然；过长省略号裁剪（标题栏空间有限），完整路径进 tooltip。
-    // 错误文案优先展示（`workspace.set`/picker 失败反馈，SystemCritical）。
-    #[allow(unused_variables)]
-    let workspace_path: Element = if let Some(err) = &state.workspace_error {
-        text_block(err)
+    // 工作区 chip（A2，composer-streamline：工作目录从 composer footer 迁入）：
+    // 显示当前会话运行工作区（HeaderState.workspace，`workspace.set` 成功后
+    // 写入），短路径截断完整路径进 tooltip；未选时显示入口文案。
+    let workspace_chip: Element = {
+        let label = if state.workspace.is_empty() {
+            workspace_label.to_string()
+        } else {
+            short_cwd(&state.workspace)
+        };
+        button(label)
+            .icon(Icon::symbol(Symbol::Folder))
+            .subtle()
+            .tooltip(if state.workspace.is_empty() {
+                workspace_label.to_string()
+            } else {
+                state.workspace.clone()
+            })
+            .automation_name("工作区")
+            .automation_id("header-workspace")
+            .on_click(on_workspace.clone())
+            .into()
+    };
+    // 工作区错误提示（workspace.set / picker 失败反馈，SystemCritical；
+    // 修复「选择失败但零提示」）。无错误时不挂载（消除 spacing 幻影空隙）。
+    let workspace_error: Element = match &state.workspace_error {
+        Some(err) => text_block(err)
             .font_size(11.0)
             .foreground(ThemeRef::SystemCritical)
-            .max_width(260.0)
+            .max_width(160.0)
             .text_trimming(TextTrimming::CharacterEllipsis)
             .vertical_alignment(VerticalAlignment::Center)
             .tooltip(err.clone())
             .automation_name(err)
             .with_key("header-workspace-error")
-            .into()
-    } else if state.workspace.is_empty() {
-        text_block(if en {
-            "No workspace"
-        } else {
-            "未选择工作区"
-        })
-        .font_size(11.0)
-        .foreground(ThemeRef::TertiaryText)
-        .vertical_alignment(VerticalAlignment::Center)
-        .automation_name("工作区路径（空）")
-        .with_key("header-workspace-path-empty")
-        .into()
-    } else {
-        text_block(&state.workspace)
-            .font_size(11.0)
-            .foreground(ThemeRef::SecondaryText)
-            .max_width(260.0)
-            .text_trimming(TextTrimming::CharacterEllipsis)
-            .vertical_alignment(VerticalAlignment::Center)
-            .tooltip(state.workspace.clone())
-            .automation_name(&state.workspace)
-            .with_key("header-workspace-path")
-            .into()
+            .into(),
+        None => Element::Empty,
     };
     let compact_label = if state.compacting {
         if en {
@@ -347,9 +343,11 @@ pub fn header(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
             on_refresh,
         )
     };
-    // 工作区按钮/路径已移除（cwd 非持久 bug 挂账；恢复时连同
-    // on_workspace/workspace_path 一起回归）。
+    // footer：工作区 chip（A2 迁入）+ 错误提示 | 压缩 + 终态 chip | 刷新
     let footer: Element = hstack((
+        workspace_chip,
+        workspace_error,
+        divider.clone(),
         compact_progress,
         action_button(
             Icon::symbol(Symbol::Clear),

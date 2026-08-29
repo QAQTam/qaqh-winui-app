@@ -1,14 +1,19 @@
 //! XAML 原生 Composer 底部栏（P6 输入框迁移块）— Web `ComposerDock` 的壳侧承载。
 //!
-//! 布局（挂载于 main.rs right_content row0 内层 grid row1，chat 视图可见）：
+//! 布局（挂载于 main.rs right_content row0 内层 grid row1，chat 视图可见；
+//! 2026-08 精简后单卡两区，见 docs/nextdev/composer-streamline.md 批次 A）：
 //! ```text
 //! ├ queue 行（"n 条后续任务已排队" + 列表 + 删除）              │  ← 可选
 //! ├ slash 菜单（composer 上方覆盖层 cell）                      │  ← 可选
-//! └ 卡片（LayerFill + 圆角 8px，对齐 .composer-dock）           │
-//!   ├ TextBox（多行 + Enter accelerator 发送 / Shift+Enter 换行）│
+//! └ 悬浮卡（elevated_command_surface：LayerFill 圆角 8 + elevation 16）
+//!   ├ 顶部条：拖拽 grip（横向居中）+ ⤢ 沉浸式（A6 右端）         │
+//!   ├ TextBox（多行无自绘边框，直接坐进卡；Enter 发送）          │
 //!   ├ submitError 行 / 附件预览行                               │
-//!   └ footer：附件 MenuFlyout | mode | 权限 ComboBox | 发送/停止 │
+//!   ├ footer：附件 | 工具模式 | 模式 chip | [工作目录空态入口] | 权限 | 发送
+//!   └ 卡底 2px 贴边 token 分布线 + 右端短计数 caption（A3）      │
 //! ```
+//! 工作目录 chip（A2）：已选目录后显示于标题栏（header.rs footer），
+//! 卡上仅保留未选目录时的一次性入口。
 //!
 //! 数据源：`bridge.core().composer_snapshot()`（Web `shell.setComposer`
 //! 投影，250ms rev 轮询；goal 功能冻结后 `dashboard_snapshot()` 不再
@@ -35,8 +40,9 @@ use qaqh_types::tool_mode::{CUSTOM, MINIMAL, MINIMAL_B, MINIMAL_C, STANDARD};
 
 /// 快照轮询间隔（同 interaction_overlay：交互响应优先）。
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
-const INPUT_MIN_HEIGHT: f64 = 64.0;
-const INPUT_DEFAULT_HEIGHT: f64 = 84.0;
+// A1 去卡中卡：输入区直接坐进卡片（Fluent 2 输入基准），空态 56px。
+const INPUT_MIN_HEIGHT: f64 = 48.0;
+const INPUT_DEFAULT_HEIGHT: f64 = 56.0;
 const INPUT_AUTO_MAX_HEIGHT: f64 = 180.0;
 const INPUT_MANUAL_MAX_HEIGHT: f64 = 360.0;
 
@@ -98,8 +104,33 @@ fn tool_mode_from_index(index: i32) -> &'static str {
     }
 }
 
+/// 权限四档菜单项（A4 语义 chip）：档位名 + 一句话说明（全量语义见
+/// settings_view `PERMISSION_LADDER`）。`on_item_clicked` 回传整段文本，
+/// 由 [`permission_menu_level`] 解析档位。
+pub(crate) const PERMISSION_MENU: [(u64, &str); 4] = [
+    (1, "L1 保守 · 每个工具调用都需确认"),
+    (2, "L2 询问 · 读取自动批准，写入/执行/网络需确认"),
+    (3, "L3 自动 · 工作区内操作自动批准"),
+    (4, "L4 全自动 · 无权限检查（默认，谨慎）"),
+];
+
+/// 权限菜单文本 → 档位（精确匹配 [`PERMISSION_MENU`] 条目；未知返回 None）。
+pub(crate) fn permission_menu_level(label: &str) -> Option<u64> {
+    PERMISSION_MENU
+        .iter()
+        .find(|(_, text)| label == *text)
+        .map(|(lvl, _)| *lvl)
+}
+
+/// 权限选择是否放行（Bug#2 守卫语义等价迁移，A4 控件形态变化）：
+/// rendered==0（config 未加载/失败）→ 任何选择事件都跳过——旧 ComboBox 的
+/// SelectionChanged 守卫；MenuFlyout 虽无程序化同步事件，仍保留同语义拦截。
+/// 同值选择 → 无操作（对齐旧 ComboBox 的 `lvl != rendered_pl` 判定）。
+pub(crate) fn permission_change_allowed(rendered_pl: u64, lvl: u64) -> bool {
+    rendered_pl != 0 && lvl != rendered_pl
+}
+
 /// 工具模式 SelectionChanged 是否应放行（真实用户点击）而非跳过（程序化同步）。
-///
 /// - **非空渲染值**：仅当新值 != 渲染值时才可能是用户点击。渲染期设置
 ///   `selected_index` 会触发同值 SelectionChanged（同步事件），必须跳过。
 /// - **空渲染值**（新会话 `meta.json` 的 `tool_mode` 为空，渲染为 standard(0)）：
@@ -193,8 +224,20 @@ fn fmt_thousands(n: u64) -> String {
     out
 }
 
+/// token 计数短格式（A3 卡底 caption）：999 / 11.2K / 1.23M；全量计数走 tooltip。
+fn fmt_tokens_short(n: u64) -> String {
+    if n < 1_000 {
+        n.to_string()
+    } else if n < 1_000_000 {
+        format!("{:.1}K", n as f64 / 1_000.0)
+    } else {
+        format!("{:.2}M", n as f64 / 1_000_000.0)
+    }
+}
+
 /// 工作区 chip 显示标签：取路径末两段（长路径截断，完整路径走 tooltip）。
-fn short_cwd(cwd: &str) -> String {
+/// A2 起同时供标题栏工作区 chip 使用（header.rs）。
+pub(crate) fn short_cwd(cwd: &str) -> String {
     let parts: Vec<&str> = cwd.split(['\\', '/']).filter(|p| !p.is_empty()).collect();
     let n = parts.len();
     if n == 0 {
@@ -317,5 +360,47 @@ mod tests {
         assert!(tool_mode_change_is_user(MINIMAL_B, 4));
         assert!(tool_mode_change_is_user(CUSTOM, 0));
         assert!(tool_mode_change_is_user(CUSTOM, 3));
+    }
+
+    #[test]
+    fn permission_menu_level_resolves_all_four_labels() {
+        for (lvl, text) in PERMISSION_MENU {
+            assert_eq!(permission_menu_level(text), Some(lvl), "{text}");
+        }
+        assert_eq!(permission_menu_level("上传图片"), None);
+        assert_eq!(permission_menu_level(""), None);
+        assert_eq!(permission_menu_level("L5 越权"), None);
+    }
+
+    #[test]
+    fn permission_change_allowed_preserves_bug2_guard() {
+        // Bug#2：rendered==0（config 未加载）一律跳过，任何档位都不写。
+        for lvl in [1u64, 2, 3, 4] {
+            assert!(!permission_change_allowed(0, lvl), "rendered=0 lvl={lvl}");
+        }
+        // 同值 = 无操作；跨档位放行。
+        assert!(!permission_change_allowed(2, 2));
+        assert!(permission_change_allowed(2, 3));
+        assert!(permission_change_allowed(4, 1));
+    }
+
+    #[test]
+    fn tokens_short_format_tiers() {
+        assert_eq!(fmt_tokens_short(0), "0");
+        assert_eq!(fmt_tokens_short(999), "999");
+        assert_eq!(fmt_tokens_short(1_000), "1.0K");
+        assert_eq!(fmt_tokens_short(11_168), "11.2K");
+        assert_eq!(fmt_tokens_short(999_999), "1000.0K");
+        assert_eq!(fmt_tokens_short(1_234_567), "1.23M");
+    }
+
+    #[test]
+    fn a1_height_constants_meet_fluent2_baseline() {
+        // A1 去卡中卡：空态 56（Fluent 2 输入基准），最小 48；上限不变。
+        assert_eq!(INPUT_DEFAULT_HEIGHT, 56.0);
+        assert_eq!(INPUT_MIN_HEIGHT, 48.0);
+        assert_eq!(INPUT_AUTO_MAX_HEIGHT, 180.0);
+        assert_eq!(INPUT_MANUAL_MAX_HEIGHT, 360.0);
+        assert!(INPUT_MIN_HEIGHT < INPUT_DEFAULT_HEIGHT);
     }
 }

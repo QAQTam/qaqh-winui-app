@@ -103,8 +103,10 @@ fn work_status_component(props: &WorkStatusProps, cx: &mut RenderCx) -> Element 
     let _ = sec_tick;
     let now = unix_ms();
 
+    // 空闲整行不挂载（零高 grid(()) 会在 vstack spacing 两侧产生幻影空隙；
+    // 视图层另有空闲短路，这里是 idle+有胶囊路径的兜底）。
     let parent_row: Element = if !active {
-        grid(()).with_key("work-status-empty").into()
+        Element::Empty
     } else {
         let runs = shimmer_runs(&label, tick as f64 - 4.0);
         hstack((
@@ -123,9 +125,9 @@ fn work_status_component(props: &WorkStatusProps, cx: &mut RenderCx) -> Element 
         .into()
     };
 
-    // 子代理胶囊行（第二行；空 = 零高占位，与现状完全一致）。
+    // 子代理胶囊行（第二行；空 = 不挂载，与幻影空隙消除口径一致）。
     let pills_row: Element = if !has_pills {
-        grid(()).into()
+        Element::Empty
     } else {
         let mut items: Vec<Element> = props
             .subagents

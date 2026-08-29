@@ -357,6 +357,19 @@ pub fn command_surface(child: impl Into<Element>) -> Element {
         .into()
 }
 
+/// [`command_surface`] 的悬浮变体（ThemeShadow）：同一 LayerFill 卡面 +
+/// elevation z 轴投影（shadow 落在直接父面板上）。目前仅 composer 卡使用；
+/// 停靠列（InfoPanel 等）的分层语言是底色/描边，不加投影。
+pub fn elevated_command_surface(child: impl Into<Element>, z: f64) -> Element {
+    border(child)
+        .background(ThemeRef::LayerFill)
+        .border_brush(ThemeRef::SurfaceStroke)
+        .border_thickness(hairline())
+        .corner_radius(tokens::RADIUS_CARD)
+        .elevation(z)
+        .into()
+}
+
 /// Small non-interactive metadata marker such as a file type.
 pub fn metadata_badge(label: impl Into<String>) -> Element {
     border(
@@ -595,6 +608,7 @@ mod tests {
             "Border"
         );
         assert_eq!(command_surface(grid(())).kind_name(), "Border");
+        assert_eq!(elevated_command_surface(grid(()), 16.0).kind_name(), "Border");
         assert_eq!(metadata_badge("TXT").kind_name(), "Border");
         assert_eq!(
             settings_card("主题", "选择应用主题", ComboBox::new(vec!["系统"])).kind_name(),

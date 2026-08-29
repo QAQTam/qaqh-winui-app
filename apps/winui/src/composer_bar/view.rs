@@ -6,7 +6,7 @@ use windows_reactor::*;
 use qaqh_fluent::{motion, tokens};
 use qaqh_types::tool_mode::CUSTOM;
 
-use crate::bridge::{Bridge, ComposerAttachment, ComposerState, ComposerTextFile};
+use crate::bridge::{Bridge, ComposerAttachment, ComposerState, ComposerTextFile, WorkPhase};
 use crate::shell_store::ContextStats;
 
 use super::status::{guess_image_mime, queue_row, work_status_bar};
@@ -165,7 +165,8 @@ pub fn composer_bar(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
         move |value: String| {
             if !manual_height && !immersive {
                 let line_count = value.as_bytes().iter().filter(|&&b| b == b'\n').count() + 1;
-                let target = (44.0 + line_count as f64 * 20.0)
+                // A1：单行 = 56（新空态基准），两行起每行 +20。
+                let target = (36.0 + line_count as f64 * 20.0)
                     .clamp(INPUT_MIN_HEIGHT, INPUT_AUTO_MAX_HEIGHT);
                 let prev = *last_auto.borrow();
                 if (target - prev).abs() > 1.0 {
@@ -463,10 +464,13 @@ pub fn composer_bar(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
     };
 
     // TextBox + Enter accelerator（菜单可见时附加 ↓↑ Esc）。
+    // A1 去卡中卡：零边框 + 同卡底色（LayerFill），输入区直接坐进外层
+    // command_surface 卡，消除双边框冗余感；高度基准 56（Fluent 2 输入）。
     let mut input: Element = text_box(text.clone())
         .multiline()
         .placeholder_text(placeholder)
         .height(input_height)
+        .border_thickness(Thickness::xy(0.0, 0.0))
         .on_text_changed(on_text_changed)
         .keyboard_accelerator(KeyboardAccelerator::new(
             VirtualKey::Enter,
@@ -476,6 +480,7 @@ pub fn composer_bar(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
         .automation_name("消息输入")
         .automation_id("composer-input")
         .with_key("composer-textbox")
+        .background(ThemeRef::LayerFill)
         .into();
     if slash_visible {
         input = input
@@ -555,14 +560,16 @@ pub fn composer_bar(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
         attach_rows.push(row.with_key(format!("att-{i}-{}", att.id)));
     }
     let attach_preview: Element = if attach_rows.is_empty() {
-        grid(()).into()
+        Element::Empty
     } else {
         vstack(attach_rows).spacing(tokens::SPACE_1).into()
     };
 
     // submitError 行（Web 失败回填；壳保留草稿不清空）。
+    // 空态用 Element::Empty：零高 grid(()) 占位会在 vstack spacing 两侧产生
+    // 幻影空隙（A1 高度回收的一部分）。
     let error_row: Element = if state.submit_error.is_empty() {
-        grid(()).into()
+        Element::Empty
     } else {
         text_block(&state.submit_error)
             .font_size(tokens::TYPE_CAPTION)
@@ -600,43 +607,39 @@ pub fn composer_bar(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
             .into()
     };
 
-    // 四档权限属于 4+ 单选集合，用 ComboBox 避免网页式 pill 兼容层。
-    // permission_level==0（config 未加载/失败）：SelectedIndex=-1（WinUI 无选中
-    // 空白），避免 0.saturating_sub(1)=0 显示成 L1 误导用户以为被重置。
+    // 权限语义 chip（A4）：`L1▼` ComboBox → `权限 L{n}` MenuFlyout，四项
+    // 带一句话说明（黑话 L1 不再裸奔）。守卫等价迁移：menu 无程序化同步
+    // 事件，但 rendered_pl==0（config 未加载）时按钮禁用 + 回调内再拦一道
+    // （permission_change_allowed，Bug#2 语义）——此前该窗口未闭合导致每次
+    // 启动都把权限误写成 L1 并持久化。
     let pl = state.permission_level;
-    let permission_picker: Element = qaqh_fluent::solid_combo_box(["L1", "L2", "L3", "L4"])
-        .selected_index(if pl == 0 {
-            -1
-        } else {
-            pl.saturating_sub(1).min(3) as i32
-        })
-        .on_selection_changed({
+    let perm_label = if pl == 0 {
+        "权限 …".to_string()
+    } else {
+        format!("权限 L{pl}")
+    };
+    let mut permission_button = button(perm_label)
+        .icon(Icon::symbol(Symbol::Permissions))
+        .subtle()
+        .menu_flyout(PERMISSION_MENU.iter().map(|(_, text)| menu_item(*text)).collect())
+        .on_item_clicked({
             let on_permission = on_permission.clone();
-            // 防程序化同步误触发：WinUI 渲染应用 SelectedIndex（如 -1→0）也会
-            // 触发 SelectionChanged，回调里 index+1 与渲染时的实际权限一致则
-            // 视为同步事件，跳过——否则冷启动/重渲染会把权限误写成 L1。
-            // 防护补洞：rendered_pl==0（config 未加载，SelectedIndex=-1 被
-            // WinUI 规范化为 0 → index+1=1 ≠ 0）时任何 SelectionChanged 都是
-            // 程序化同步事件，一律跳过——此前该窗口未闭合导致每次启动都把
-            // 权限误写成 L1 并持久化（Bug#2）。
             let rendered_pl = pl;
-            move |index: i32| {
-                if rendered_pl == 0 {
-                    return;
-                }
-                if index >= 0 {
-                    let lvl = (index + 1) as u64;
-                    if lvl != rendered_pl {
+            move |label: String| {
+                if let Some(lvl) = permission_menu_level(&label) {
+                    if permission_change_allowed(rendered_pl, lvl) {
                         on_permission(lvl);
                     }
                 }
             }
         })
-        .width(80.0)
-        .tooltip("权限级别")
+        .tooltip("权限级别：控制哪些操作自动批准")
         .automation_name("权限级别")
-        .automation_id("composer-permission-level")
-        .into();
+        .automation_id("composer-permission-level");
+    if pl == 0 {
+        permission_button = permission_button.enabled(false);
+    }
+    let permission_picker: Element = permission_button.into();
 
     // 工具模式五选一（标准/极限·8/极限·6/极限·4/创造；PLAN-TOOL-MODES.md，minimal:dsh 已移除）。
     // 空态（新会话 meta.tool_mode 为空）渲染为 standard(0) 而非 -1：-1 会被 WinUI
@@ -664,17 +667,30 @@ pub fn composer_bar(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
         .automation_id("composer-tool-mode")
         .into();
 
-    let mode_button: Element = button(if state.mode == "plan" {
-        "规划"
+    // 执行/规划 toggle chip（A5）：图标+文；规划（非默认态）用 accent 底作
+    // Fluent toggle 选中语言，执行态 subtle。点击互切（spawn_set_mode）。
+    let mode_button: Element = if state.mode == "plan" {
+        button("规划")
+            .icon(Icon::symbol(Symbol::List))
+            .accent()
+            .tooltip("规划模式（点击切回执行）")
+            .automation_name("工作模式")
+            .automation_id("composer-mode")
+            .on_click(on_mode_toggle)
+            .into()
     } else {
-        "执行"
-    })
-    .subtle()
-    .tooltip("切换工作模式")
-    .automation_name("工作模式")
-    .automation_id("composer-mode")
-    .on_click(on_mode_toggle)
-    .into();
+        button("执行")
+            .icon(Icon::symbol(Symbol::Play))
+            .subtle()
+            .tooltip("执行模式（点击切换规划）")
+            .automation_name("工作模式")
+            .automation_id("composer-mode")
+            .on_click(on_mode_toggle)
+            .into()
+    };
+    // ⤢ 沉浸式（A6）：移出 footer，与拖拽 grip 同行（顶部条右端），
+    // footer 减负；hover 显形需 IsHitTestVisible（vendor 未投影，隐形控件
+    // 会拦截输入区点击），故常显 subtle。
     let immersive_button: Element = button("")
         .icon(Icon::symbol(if immersive {
             Symbol::BackToWindow
@@ -682,6 +698,7 @@ pub fn composer_bar(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
             Symbol::FullScreen
         }))
         .subtle()
+        .height(28.0)
         .tooltip(if immersive {
             "退出沉浸式编辑"
         } else {
@@ -710,79 +727,85 @@ pub fn composer_bar(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
         })
         .into();
 
-    // 工作区 chip（footer STAR 列）：显示活动会话 meta.cwd（后端持久源，
-    // 重启安全；无会话/未设置时占位文案）。点击 → 系统选目录 → 有活动会话
-    // 走 workspace.set（粘性写 meta.cwd + 自动归属），无会话走
-    // workspace.create + 选中（作为下个新会话 SessionCreate 携带的 cwd）。
-    // 工作区设置唯一入口（原顶部按钮已移除，标签栏不做过滤）。
+    // 工作区入口（A2）：已选目录 → 标题栏 chip（header.rs footer，恢复
+    // 挂账的 on_workspace 合并流）；卡上仅未选目录时保留一次性入口。
+    // 点击 → 系统选目录 → 有活动会话走 workspace.set（粘性写 meta.cwd +
+    // 自动归属），无会话走 workspace.create + 选中（作为下个新会话
+    // SessionCreate 携带的 cwd）。
     let cwd_display = state.cwd.clone();
-    let cwd_label = cwd_display
-        .as_deref()
-        .map(short_cwd)
-        .unwrap_or_else(|| "选择工作目录".to_string());
-    let workspace_chip: Element = button(cwd_label)
-        .icon(Icon::symbol(Symbol::Folder))
-        .subtle()
-        .tooltip(cwd_display.as_deref().unwrap_or("选择会话工作目录"))
-        .automation_name("工作区")
-        .automation_id("composer-workspace")
-        .on_click({
-            let bridge = bridge.clone();
-            move || match bridge.pick_workspace_directory() {
-                Ok(serde_json::Value::String(path)) => {
-                    // 空 path 防护：永不向 daemon 发空 cwd（后端已拒绝，
-                    // 这里同步拦截，避免无意义往返）。
-                    if path.trim().is_empty() {
-                        return;
+    let cwd_entry_visible = cwd_display.as_deref().map(str::is_empty).unwrap_or(true);
+    let workspace_chip: Element = if cwd_entry_visible {
+        button("选择工作目录")
+            .icon(Icon::symbol(Symbol::Folder))
+            .subtle()
+            .tooltip("选择会话工作目录")
+            .automation_name("工作区")
+            .automation_id("composer-workspace")
+            .on_click({
+                let bridge = bridge.clone();
+                move || match bridge.pick_workspace_directory() {
+                    Ok(serde_json::Value::String(path)) => {
+                        // 空 path 防护：永不向 daemon 发空 cwd（后端已拒绝，
+                        // 这里同步拦截，避免无意义往返）。
+                        if path.trim().is_empty() {
+                            return;
+                        }
+                        if !bridge.core().active_seed().is_empty() {
+                            bridge.spawn_workspace_set(path);
+                        } else {
+                            bridge.spawn_workspace_create(path);
+                        }
                     }
-                    if !bridge.core().active_seed().is_empty() {
-                        bridge.spawn_workspace_set(path);
-                    } else {
-                        bridge.spawn_workspace_create(path);
-                    }
+                    _ => {}
                 }
-                _ => {}
-            }
-        })
-        .into();
+            })
+            .into()
+    } else {
+        Element::Empty
+    };
 
     // Grid provides real left/right command groups. A horizontal StackPanel
     // cannot emulate a web flex spacer because it measures children at infinity.
-    let footer: Element = grid((
-        attach_button.grid_column(0),
+    // 列按需组装（A2 工作目录迁标题栏、A6 ⤢ 移顶部条后）：附件 | 工具模式 |
+    // 模式 chip | [工作目录空态入口] | 弹性空白 | 权限 | 发送 —— 常态 6 项。
+    let mut footer_cells: Vec<Element> = vec![
+        attach_button.grid_column(0).into(),
         tool_mode_picker.grid_column(1),
         mode_button.grid_column(2),
-        workspace_chip.grid_column(4),
-        immersive_button.grid_column(3),
-        hstack((permission_picker,))
-            .spacing(tokens::SPACE_2)
-            .vertical_alignment(VerticalAlignment::Center)
-            .grid_column(5),
-        send_stop.grid_column(6),
-    ))
-    .columns([
+    ];
+    let mut footer_cols: Vec<GridLength> = vec![
         GridLength::Auto,
         GridLength::Auto,
         GridLength::Auto,
-        GridLength::Auto,
-        GridLength::STAR,
-        GridLength::Auto,
-        GridLength::Auto,
-    ])
-    .column_spacing(tokens::SPACE_2)
-    .into();
+    ];
+    let mut col = 3;
+    if cwd_entry_visible {
+        footer_cols.push(GridLength::Auto);
+        footer_cells.push(workspace_chip.grid_column(col));
+        col += 1;
+    }
+    footer_cols.push(GridLength::STAR);
+    footer_cols.push(GridLength::Auto);
+    footer_cells.push(permission_picker.grid_column(col));
+    footer_cells.push(send_stop.grid_column(col + 1));
+    let footer: Element = grid(footer_cells)
+        .columns(footer_cols)
+        .column_spacing(tokens::SPACE_2)
+        .into();
 
     // Twelve-DIP hit target with a quiet two-DIP visual grip. Dragging upward
     // grows the editor; tapping returns ownership to automatic sizing.
+    // A6：条加高到 28 与 ⤢ 沉浸式按钮同行（右端）， grip 垂直居中。
     let grip: Element = border(text_block(""))
         .width(40.0)
         .height(2.0)
         .corner_radius(1.0)
         .background(ThemeRef::DividerStroke)
         .horizontal_alignment(HorizontalAlignment::Center)
+        .vertical_alignment(VerticalAlignment::Center)
         .into();
     let resize_handle: Element = border(grip)
-        .height(12.0)
+        .height(28.0)
         .capture_pointer_on_press()
         .on_pointer_pressed({
             let resize_start = resize_start.clone();
@@ -828,11 +851,20 @@ pub fn composer_bar(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
         .automation_name("调整输入框高度")
         .automation_id("composer-resize-handle")
         .into();
+    // 顶部条（A6）：拖拽 grip 满宽 + ⤢ 沉浸式右端；两列并排不叠压，
+    // 按钮点击不会落进拖拽命中区。
+    let top_strip: Element = grid((
+        resize_handle.grid_column(0),
+        immersive_button.grid_column(1),
+    ))
+    .columns([GridLength::STAR, GridLength::Auto])
+    .into();
 
-    // 上下文构成堆叠条（输入框下常驻）：6 段 token 分布（对齐 Web
+    // 上下文构成堆叠条（A3 降级为卡底贴边线）：6 段 token 分布（对齐 Web
     // ContextPanel 饼图语义：对话/思考/工具调用/工具结果/工具定义/系统提示），
-    // 加权 Star 列按占比分宽，段间 1px 间隔，语义色 + tooltip。
-    // 悬停命中：4px 条 + 整行容器都挂 tooltip（细条难 hover，容器兜底）。
+    // 2px 高贴卡片下缘（卡 padding bottom=0 + WinUI Border 圆角裁切），
+    // 短计数 caption 叠在线右端（线从文字下穿过），全量数字进 tooltip。
+    // 悬停命中：整行容器与各段都挂 tooltip（细条难 hover，容器兜底）。
     // 文件缺失或全零（无会话/回合未结束）时隐藏。
     let ctx_bar: Element = match ctx_stats.as_ref() {
         Some(s) if s.total() > 0 => {
@@ -866,30 +898,36 @@ pub fn composer_bar(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
                     fmt_thousands(*v)
                 ));
             }
-            grid((
-                border(grid(cells).columns(weights).column_spacing(1.0))
-                    .height(4.0)
-                    .corner_radius(2.0)
-                    .tooltip(summary.clone())
-                    .automation_name(summary)
-                    .grid_column(0),
-                text_block(format!("{} tokens", fmt_thousands(total)))
-                    .font_size(11.0)
-                    .foreground(ThemeRef::SecondaryText)
-                    .grid_column(1),
-            ))
-            .columns([GridLength::STAR, GridLength::Auto])
-            .column_spacing(tokens::SPACE_2)
-            .with_key("ctx-bar")
-            .into()
+            // 2px 分布线（贴底）+ caption 同格叠放：caption 后挂 → 渲染在线上，
+            // 线成为其下划线；行高 = caption 行高，不新增独立行。
+            let line: Element = border(grid(cells).columns(weights).column_spacing(1.0))
+                .height(2.0)
+                .corner_radius(1.0)
+                .vertical_alignment(VerticalAlignment::Bottom)
+                .tooltip(summary.clone())
+                .into();
+            let caption: Element = text_block(fmt_tokens_short(total))
+                .font_size(10.0)
+                .foreground(ThemeRef::SecondaryText)
+                .horizontal_alignment(HorizontalAlignment::Right)
+                .vertical_alignment(VerticalAlignment::Bottom)
+                .tooltip(summary.clone())
+                .automation_name(format!("{} tokens", fmt_thousands(total)))
+                .into();
+            grid((line, caption))
+                .tooltip(summary.clone())
+                .automation_name(summary)
+                .with_key("ctx-bar")
+                .into()
         }
         _ => grid(()).with_key("ctx-bar-empty").into(),
     };
 
-    // 持久命令表面使用 LayerFill；边框/圆角由共享 Fluent primitive 统一。
-    let card: Element = qaqh_fluent::command_surface(
+    // 悬浮命令卡（A1+批次 B2）：LayerFill + 圆角 8 + elevation 16（ThemeShadow
+    // 落在直接父面板）；卡 padding bottom=0 让 token 线贴下缘（圆角裁切）。
+    let card: Element = qaqh_fluent::elevated_command_surface(
         vstack((
-            resize_handle,
+            top_strip,
             input,
             error_row,
             attach_preview,
@@ -897,16 +935,22 @@ pub fn composer_bar(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
             ctx_bar,
         ))
         .spacing(tokens::SPACE_2)
-        .padding(tokens::SPACE_3),
+        .padding(Thickness {
+            left: tokens::SPACE_3,
+            top: tokens::SPACE_2,
+            right: tokens::SPACE_3,
+            bottom: 0.0,
+        }),
+        16.0,
     )
     .automation_name("消息编辑器")
     .automation_id("composer-surface");
 
-    // 队列行（queue_count > 0 时）。
+    // 队列行（queue_count > 0 时；空态不挂载，消除 spacing 幻影空隙）。
     let queue_bar: Element = if state.queue_count > 0 {
         queue_row(&state, on_queue_remove)
     } else {
-        grid(()).into()
+        Element::Empty
     };
 
     // slash 菜单（可见时；composer 卡片上方 cell）。
@@ -935,11 +979,17 @@ pub fn composer_bar(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
             .with_key("composer-slash-menu")
             .into()
     } else {
-        grid(()).into()
+        Element::Empty
     };
 
-    // 工作状态栏（输入框之上最顶行；活动时显示，空闲零高占位）。
-    let status_bar = work_status_bar(cx, &state);
+    // 工作状态栏（输入框之上最顶行）。空闲且无胶囊时整行不挂载：
+    // 零高占位会在外层 vstack 两侧产生 spacing 幻影空隙（A1 高度回收）。
+    let status_bar: Element =
+        if matches!(state.phase, WorkPhase::Idle) && state.subagents.is_empty() {
+            Element::Empty
+        } else {
+            work_status_bar(cx, &state)
+        };
 
     vstack((status_bar, queue_bar, slash_menu, card))
         .spacing(tokens::SPACE_2)
