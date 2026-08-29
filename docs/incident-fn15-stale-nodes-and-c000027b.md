@@ -12,10 +12,12 @@
 - **复现率**：100% 确定性。同一批 **155 个脏节点 ID 序列逐次完全相同** → 排除竞态，判定为**确定性的渲染调度缺陷**。
 - **触发条件**：大快照 reconcile。种子节点在 reconcile 时携带 state_dirty 标记进入渲染管线，但 `update_output` 的遍历没有覆盖到它们，标记遗留至帧末断言点。
 
-### 1.2 装机版崩溃 —— ⚠️ 不同源，未定位
-- dev 的 assert 崩修复后，装机版仍会在 `Microsoft.ui.xaml.dll` 内部抛 stowed exception（未知 HRESULT）。
-- 与 dev 崩溃**不同源**。LocalDumps 提权（需用户侧操作）开启前无法拿到精确转储。
-- 注意：F-N14 的 XML 控制字符净化修复是真实有效的加固，但**不是全貌**。
+### 1.2 装机版崩溃 —— ✅ 已实锤已修（2026-08-29 定案，见 §4.2）
+- dev 的 assert 崩修复后，装机版仍会在 `Microsoft.ui.xaml.dll` 内部抛 stowed exception。
+- **2026-08-29 定案**：LocalDumps 抓到转储后，`!analyze` 解出 stowed HRESULT = **0x80040111 CLASS_E_CLASSNOTAVAILABLE**。全链：`Expander::OnApplyTemplate`（Mux 控件库版）→ VSM `GoToState` → storyboard 进树 → `InheritanceContextChanged` → `BindingExpression` 重连（`PropertyPathListener::ReConnect`）→ `TryGetDependencyPropertyByName` → 类构造器 → `MuxGetActivationFactoryImpl` → **80040111** → stow → fail-fast。
+- 触发条件：resume 大上下文会话（大量块进虚拟化 Measure），启动后无交互纯布局帧即崩；`TryGetDependencyPropertyByName` 的类构造器缓存造成非确定性（缓存热则存活）。
+- 二分实验闭环：同一 daemon、同一恢复会话，仅去设置页 Expander 仍同 bucket 崩；全局搜实锤真凶为 **chat 工具块 Expander**（`chat_view/blocks.rs` 过程摘要折叠）与 **info 面板 todo 卡 Expander**。
+- 处置：**全 app 停用原生 Expander**，折叠交互统一改为「tap header（`on_tapped`）+ 条件渲染」；设置页分组退化为 section header + 平铺 vstack。vendor metadata 链为何走 `GetActivationFactory<IManagedActivationFactory>` 冷路径失败，仍属未解深因（§4.4）。
 
 ### 1.3 卡顿 —— ⚠️ 定性观察，未量化
 - 长对话滚动/交互变卡。最可疑上游：F-N6 废除工具行空间回收后，**工具行组件永生（常驻暴增）**。
@@ -52,9 +54,13 @@ A 方案只是防御。核心疑问未定论：
 
 **判定方法（待执行）**：在消费点打印 STALE 节点的父链 + 组件类型。若能沿父链走通到根 → 假设二成立，需修 update_output 遍历覆盖。
 
-### 4.2 装机版 stowed exception 定责
-- 用户侧开启 LocalDumps 提权 → 抓 `.dmp` → 用 WinDbg 看 stowed exception 队列拿 HRESULT 与调用栈。
-- 在此之前任何"修好了"的说法都不成立。
+### 4.2 装机版 stowed exception 定责 —— ✅ 已闭环（2026-08-29）
+- LocalDumps（`QAQ-Harness.exe` + `qaqh-winui.exe` 双进程名键）→ 6 秒 100% 自动复现（启动即 resume）→ cdb `!analyze -v` 解出 0x80040111 全栈。
+- 根因与处置见 §1.2。Expander 崩溃族就此关闭；后续新增折叠 UI 一律走 tap header + 条件渲染，不引入 Expander。
+
+### 4.4 vendor metadata 链深因（挂起）
+- 现象层已定案（§1.2），但「为什么受管激活冷路径在 vendored reactor 下拿不到 factory、其他 Mux 控件NavigationView/TabView/InfoBar 均无恙」未解：dxaml 按名解析属性路径走 `GetActivationFactory<IManagedActivationFactory>` 特殊通道，与 `RoGetActivationFactory` 标准路径不同，vendored 链上无 fallback。
+- 重启条件：若未来需要 Expander /其他触发同冷路径的控件（含第三方 VSM storyboard 重模板），先解此题（活体断点 + `TryGetDependencyPropertyByName` 参数捕获）。
 
 ### 4.3 motion 目检疑云
 - 派发链路日志确认正常（backend 收到配置、集合挂上），但人工目检报告"无动画硬变大"。

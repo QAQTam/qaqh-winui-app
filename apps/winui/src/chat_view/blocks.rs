@@ -137,7 +137,11 @@ fn reasoning_view(props: &BlockProps, cx: &mut RenderCx) -> Element {
     summary.is_text_selection_enabled = true;
     summary.modifiers.font_family = Some(tokens::DEFAULT_UI_FONT_FAMILY.to_string());
     let _ = props.color_scheme.clone();
-    // 头部：状态点 + 标题 + meta + chevron（Expander 自带折叠交互）。
+    // 头部：状态点 + 标题 + meta + chevron，整行可点开合。
+    // 不用原生 Expander：F-N15 §1.2 定案 Expander::OnApplyTemplate → VSM
+    // storyboard → Binding 重连 → GetActivationFactory 80040111 冷路径
+    // 崩溃（resume 大会话必现），全 app 禁用 Expander，折叠交互统一改为
+    // tap header + 条件渲染。
     let dot: Element = if done {
         text_block("✓")
             .font_size(10.0)
@@ -161,39 +165,46 @@ fn reasoning_view(props: &BlockProps, cx: &mut RenderCx) -> Element {
         text_block(if done { "已折叠" } else { "思考中…" })
             .font_size(tokens::TYPE_CAPTION)
             .foreground(ThemeRef::SecondaryText),
+        text_block(if open { "▾" } else { "▸" })
+            .font_size(tokens::TYPE_CAPTION)
+            .foreground(ThemeRef::SecondaryText),
     ))
-    .spacing(tokens::SPACE_2);
-    Expander::new(
+    .spacing(tokens::SPACE_2)
+    .padding(Thickness::xy(tokens::SPACE_2, 6.0))
+    .on_tapped({
+        let user_touched = user_touched.clone();
+        let set_open = set_open.clone();
+        move || {
+            *user_touched.borrow_mut() = true;
+            set_open.call(!open);
+        }
+    });
+    let body: Element = if open {
         ScrollViewer::new(
             vstack((Element::from(summary),))
                 .padding(Thickness::xy(tokens::SPACE_3, tokens::SPACE_2)),
         )
         .vertical_scroll_bar_visibility(ScrollBarVisibility::Auto)
         .max_height(REASONING_TAIL_HEIGHT)
-        .scroll_to_bottom(scroll_gen),
-    )
-    .header_content(head)
-    .expanded(open)
-    .on_expanding({
-        let user_touched = user_touched.clone();
-        let set_open = set_open.clone();
-        move |v| {
-            *user_touched.borrow_mut() = true;
-            set_open.call(v);
-        }
-    })
-    .min_height(34.0)
-    .automation_name(if done {
-        "过程摘要"
+        .scroll_to_bottom(scroll_gen)
+        .into()
     } else {
-        "正在整理过程摘要"
-    })
-    .automation_id(format!("chat-reasoning-{}", block.block_id))
-    .with_key(format!(
-        "{}-block-reasoning-{}",
-        props.turn_id, block.block_id
-    ))
-    .into()
+        Element::Empty
+    };
+    vstack((head, body))
+        .spacing(1.0)
+        .min_height(34.0)
+        .automation_name(if done {
+            "过程摘要"
+        } else {
+            "正在整理过程摘要"
+        })
+        .automation_id(format!("chat-reasoning-{}", block.block_id))
+        .with_key(format!(
+            "{}-block-reasoning-{}",
+            props.turn_id, block.block_id
+        ))
+        .into()
 }
 
 /// notice 块：系统/服务端通知文本（遥测平面，不参与正文排序语义）。

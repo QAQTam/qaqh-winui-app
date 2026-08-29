@@ -266,8 +266,11 @@ fn todo_status_indicator(
     }
 }
 
-/// 可交互 Todo 卡片：header 只保留稳定 ID、标题和状态；点击 header 后
-/// 由 WinUI 原生 Expander 展开 description/evidence，避免列表常态过长。
+/// 可交互 Todo 卡片：header 只保留稳定 ID、标题和状态；点击 header 展开
+/// description/evidence，避免列表常态过长。
+/// 不用原生 Expander：F-N15 §1.2 定案其模板 VSM → Binding 重连 →
+/// GetActivationFactory 80040111 冷路径崩溃（resume 大会话必现），全 app
+/// 禁用 Expander，折叠交互统一改为 tap header + 条件渲染。
 fn todo_card(task: &DashboardTask, expanded: bool, set_expanded: SetState<bool>) -> Element {
     let (glyph, status_label, status_color) = match task.status.as_str() {
         "completed" => ("✓", "已完成", ThemeRef::SystemSuccess),
@@ -296,15 +299,33 @@ fn todo_card(task: &DashboardTask, expanded: bool, set_expanded: SetState<bool>)
             .foreground(status_color)
             .vertical_alignment(VerticalAlignment::Center)
             .grid_column(2),
+        text_block(if expanded { "▾" } else { "▸" })
+            .font_size(tokens::TYPE_CAPTION)
+            .foreground(ThemeRef::SecondaryText)
+            .vertical_alignment(VerticalAlignment::Center)
+            .grid_column(3),
     ))
-    .columns([GridLength::Pixel(16.0), GridLength::STAR, GridLength::Auto])
+    .columns([
+        GridLength::Pixel(16.0),
+        GridLength::STAR,
+        GridLength::Auto,
+        GridLength::Auto,
+    ])
     .column_spacing(6.0)
-    .horizontal_alignment(HorizontalAlignment::Stretch);
+    .horizontal_alignment(HorizontalAlignment::Stretch)
+    .on_tapped({
+        let set_expanded = set_expanded.clone();
+        move || set_expanded.call(!expanded)
+    });
 
-    Expander::new(todo_detail(task))
-        .header_content(header)
-        .expanded(expanded)
-        .on_expanding(set_expanded)
+    let detail: Element = if expanded {
+        todo_detail(task)
+    } else {
+        Element::Empty
+    };
+
+    vstack((header, detail))
+        .spacing(2.0)
         .min_height(36.0)
         .padding(Thickness::xy(6.0, 2.0))
         .horizontal_alignment(HorizontalAlignment::Stretch)
@@ -748,39 +769,44 @@ mod todo_card_tests {
         }
     }
 
-    fn text_values(element: &Element) -> Vec<String> {
-        fn walk(element: &Element, out: &mut Vec<String>) {
-            match element {
-                Element::TextBlock(text) => out.push(text.text.clone()),
-                Element::StackPanel(panel) => {
-                    for child in &panel.children {
-                        walk(child, out);
-                    }
+    fn walk_texts(element: &Element, out: &mut Vec<String>) {
+        match element {
+            Element::TextBlock(text) => out.push(text.text.clone()),
+            Element::StackPanel(panel) => {
+                for child in &panel.children {
+                    walk_texts(child, out);
                 }
-                Element::Grid(grid) => {
-                    for child in &grid.children {
-                        walk(child, out);
-                    }
-                }
-                Element::Border(border) => walk(&border.child, out),
-                Element::ScrollViewer(scroll) => walk(&scroll.child, out),
-                Element::Expander(expander) => {
-                    if let Some(ExpanderHeader::Text(text)) = &expander.header {
-                        out.push(text.clone());
-                    }
-                    if let Some(ExpanderHeader::Element(header)) = &expander.header {
-                        walk(header, out);
-                    }
-                    walk(&expander.child, out);
-                }
-                Element::ProgressRing(_) => {}
-                _ => {}
             }
+            Element::Grid(grid) => {
+                for child in &grid.children {
+                    walk_texts(child, out);
+                }
+            }
+            Element::Border(border) => walk_texts(&border.child, out),
+            Element::ScrollViewer(scroll) => walk_texts(&scroll.child, out),
+            Element::ProgressRing(_) => {}
+            _ => {}
         }
+    }
 
+    fn text_values(element: &Element) -> Vec<String> {
         let mut out = Vec::new();
-        walk(element, &mut out);
+        walk_texts(element, &mut out);
         out
+    }
+
+    fn todo_header_grid(element: &Element) -> &Grid {
+        let Element::StackPanel(panel) = element else {
+            panic!("todo row must render as a vstack");
+        };
+        panel
+            .children
+            .iter()
+            .find_map(|child| match child {
+                Element::Grid(grid) => Some(grid),
+                _ => None,
+            })
+            .expect("todo header must remain a Grid")
     }
 
     #[test]
@@ -790,13 +816,13 @@ mod todo_card_tests {
     }
 
     #[test]
-    fn todo_card_is_collapsed_and_keeps_details_in_expander_content() {
+    fn todo_card_is_collapsed_and_keeps_details_for_expansion() {
         let task = task(
             "T21",
             "核对交互",
             "检查原生控件",
             "completed",
-            Some("Expander 已支持"),
+            Some("tap 展开已支持"),
         );
         let expansion_events = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
         let events = expansion_events.clone();
@@ -805,46 +831,74 @@ mod todo_card_tests {
             false,
             SetState::new(move |expanded| events.borrow_mut().push(expanded)),
         );
-        let Element::Expander(expander) = &element else {
-            panic!("todo row must render as an Expander");
-        };
-        assert!(!expander.is_expanded);
-        assert_eq!(
-            expander.modifiers.horizontal_alignment,
-            Some(HorizontalAlignment::Stretch),
-            "Todo cards must fill the available panel width"
-        );
-        let header = expander
-            .header_element()
-            .expect("todo Expander must have a clickable header");
-        let Element::Grid(header_grid) = header else {
-            panic!("todo header must remain a Grid");
-        };
+        // 收起态走 vstack(header, detail) 结构；header 保持 Grid 且横向铺满。
+        let header_grid = todo_header_grid(&element);
         assert_eq!(
             header_grid.modifiers.horizontal_alignment,
             Some(HorizontalAlignment::Stretch),
-            "Todo header content must fill its Expander"
+            "Todo header content must fill its panel"
+        );
+        let on_tapped = header_grid
+            .modifiers
+            .pointer_handlers
+            .as_ref()
+            .expect("todo header must be tappable")
+            .on_tapped
+            .as_ref()
+            .expect("todo header tap must forward expansion state");
+        on_tapped.invoke(());
+        assert_eq!(
+            *expansion_events.borrow(),
+            vec![true],
+            "collapsed tap must request expansion"
         );
 
-        let on_expanding = expander
-            .on_expanding
+        // tap 触发 set_expanded(true) 重渲染出新闭包（捕获 expanded=true），
+        // 新卡片再 tap 送出收起。
+        let collapse_events = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let events = collapse_events.clone();
+        let expanded_card = todo_card(
+            &task,
+            true,
+            SetState::new(move |expanded| events.borrow_mut().push(expanded)),
+        );
+        todo_header_grid(&expanded_card)
+            .modifiers
+            .pointer_handlers
             .as_ref()
-            .expect("todo Expander must forward expansion state");
-        on_expanding.invoke(true);
-        on_expanding.invoke(false);
-        assert_eq!(*expansion_events.borrow(), vec![true, false]);
+            .expect("todo header must be tappable")
+            .on_tapped
+            .as_ref()
+            .expect("todo header tap must forward expansion state")
+            .invoke(());
+        assert_eq!(
+            *collapse_events.borrow(),
+            vec![false],
+            "expanded tap must request collapse"
+        );
 
-        let header_text = text_values(header);
+        let header_text = {
+            let mut out = Vec::new();
+            for child in &header_grid.children {
+                walk_texts(child, &mut out);
+            }
+            out
+        };
         assert!(header_text.iter().any(|text| text == "T21 · 核对交互"));
         assert!(header_text.iter().any(|text| text == "已完成"));
         assert!(!header_text.iter().any(|text| text == "检查原生控件"));
-        assert!(!header_text.iter().any(|text| text == "Expander 已支持"));
+        assert!(!header_text.iter().any(|text| text == "tap 展开已支持"));
 
-        let detail_text = text_values(&expander.child);
+        // 收起态整体不含详情；展开态详情齐备。
+        let collapsed_text = text_values(&element);
+        assert!(!collapsed_text.iter().any(|text| text == "描述"));
+        assert!(!collapsed_text.iter().any(|text| text == "检查原生控件"));
+
+        let detail_text = text_values(&expanded_card);
         assert!(detail_text.iter().any(|text| text == "描述"));
         assert!(detail_text.iter().any(|text| text == "检查原生控件"));
         assert!(detail_text.iter().any(|text| text == "完成证据"));
-        assert!(detail_text.iter().any(|text| text == "Expander 已支持"));
+        assert!(detail_text.iter().any(|text| text == "tap 展开已支持"));
     }
 
     #[test]
@@ -867,10 +921,7 @@ mod todo_card_tests {
 
         let task = task("T22", "实现动画", "", "in_progress", None);
         let element = todo_card(&task, false, SetState::new(|_| {}));
-        let Element::Expander(expander) = &element else {
-            panic!("todo row must render as an Expander");
-        };
-        let header_text = text_values(expander.header_element().unwrap());
+        let header_text = text_values(&element);
         assert!(header_text.iter().any(|text| text == "T22 · 实现动画"));
         assert!(header_text.iter().any(|text| text == "进行中"));
     }
@@ -879,10 +930,7 @@ mod todo_card_tests {
     fn cancelled_uses_cancel_semantics_not_delete_iconography() {
         let task = task("T23", "停止实验", "", "cancelled", None);
         let element = todo_card(&task, false, SetState::new(|_| {}));
-        let Element::Expander(expander) = &element else {
-            panic!("todo row must render as an Expander");
-        };
-        let header_text = text_values(expander.header_element().unwrap());
+        let header_text = text_values(&element);
         assert!(header_text.iter().any(|text| text == "×"));
         assert!(header_text.iter().any(|text| text == "已取消"));
         assert!(!header_text.iter().any(|text| text == "🗑"));

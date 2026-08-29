@@ -221,7 +221,8 @@ pub fn settings_view(cx: &mut RenderCx, bridge: Arc<Bridge>, category: String) -
     // 本视图只渲染选中分类的内容面板（category 由 main.rs 注入）。
 
     // ── 右侧表单区（按分类）────────────────────────────────────────
-    // GroupBuf：section 函数照常 push，finish 时每组包原生 Expander 卡片。
+    // GroupBuf：section 函数照常 push，finish 时每组包「section header +
+    // 平铺 vstack」（原生 Expander 因 F-N15 §1.2 崩溃全面停用）。
     let mut rows = GroupBuf::new();
 
     // models：provider / endpoint / baseUrl / model

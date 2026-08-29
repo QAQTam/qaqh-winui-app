@@ -67,17 +67,17 @@ fn field_row(label: &str, control: Element) -> Element {
     qaqh_fluent::settings_card(label, "", control)
 }
 
-/// 分组卡片：WinUI 原生 Expander（header=组名，默认展开）。
-///
-/// 展开态为非受控：reactor prop diff 仅在值变化时写入——用户点 chevron
-/// 折叠后，重渲染（prop 仍 true）不会把卡片弹回；切换分类时 keyed 重建、
-/// 复位展开。组内字段值全部受控于 draft 草稿，折叠期内容卸载不丢值。
+/// 分组卡片：原生 Expander 已全面停用（F-N15 §1.2 定案——Expander 模板
+/// VSM → Binding 重连 → GetActivationFactory 80040111 冷路径崩溃，resume
+/// 大会话必现；chat 工具块 Expander 实锤，设置页 Expander 未证清白一并
+/// 摘除），退化为「section header + 平铺 vstack」。
 fn expander_group(title: &str, rows: Vec<Element>) -> Element {
-    // CRASH-BISECT（临时）：14:31 dump 实锤崩溃链 Expander::OnApplyTemplate
-    // → VSM GoToState → Binding 重连 → MuxGetActivationFactory → 80040111。
-    // 摘除 Expander 包装验证归因；结论后恢复原生实现。
-    let _ = title;
-    vstack(rows).spacing(qaqh_fluent::tokens::SPACE_2).into()
+    let mut children = Vec::with_capacity(rows.len() + 1);
+    children.push(qaqh_fluent::settings_section_header(title, ""));
+    children.extend(rows);
+    vstack(children)
+        .spacing(qaqh_fluent::tokens::SPACE_2)
+        .into()
 }
 
 /// 设置页分组缓冲：section 函数照常 `rows.push(...)`，组边界改调
