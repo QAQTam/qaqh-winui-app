@@ -53,7 +53,7 @@ RPC 面现状：`config.load/save/set_permission_level` + `session.activity/list
 
 | ID | 动作 | 细节 |
 |---|---|---|
-| A1 | **去卡中卡** | TextBox 去边框/独立背景，直接坐进圆角卡（radius 8）；`INPUT_DEFAULT_HEIGHT` 84→56，`INPUT_MIN_HEIGHT` 64→48，AUTO_MAX/MANUAL_MAX 180/360 不变；拖拽 resize 逻辑保留，clamp 语义改按「输入区高度」不变 |
+| A1 | **去卡中卡** | TextBox 去边框/独立背景，直接坐进圆角卡（radius 8）；`INPUT_DEFAULT_HEIGHT` 84→56，`INPUT_MIN_HEIGHT` 64→48，AUTO_MAX/MANUAL_MAX 180/360 不变；拖拽 resize 逻辑保留，clamp 语义改按「输入区高度」不变。**配轻投影**（ThemeShadow，Z 16-32，receiver 仅挂对话滚动区；需批次 B2 透出后启用——影子与卡片化同车，避免中间态） |
 | A2 | **工作目录移出** | `composer-workspace` 按钮（view.rs:723）移至会话标题栏做 chip（选过显示短路径，现逻辑 `short_cwd` 直接复用）；空态卡上保留一次性入口 |
 | A3 | **token 条降级** | 独占行 → 卡底 2px 贴边进度线；数字并到线右端 caption（"11.2K"），tooltip 显全量 |
 | A4 | **权限语义 chip** | `L1▼` ComboBox → `权限 L1 ▾` MenuFlyout 四项带说明；**守卫等价迁移**：`rendered_pl == 0` 跳过逻辑（view.rs:622-627，Bug#2）必须在 menu 选择路径保持 |
@@ -65,6 +65,7 @@ RPC 面现状：`config.load/save/set_permission_level` + `session.activity/list
 | ID | 动作 | 细节 |
 |---|---|---|
 | B1 | **Slider 刻度三件套透传** | `widgets/slider.rs` 加 `tick_frequency/tick_placement/snaps_to` 字段+builder → `generated.rs:680 slider_bindings` 推三条 Prop → mount 层照 `Prop::Step` 手写 arm（`backend/winui/mod.rs:2004`）加 `SetTickFrequency/SetTickPlacement/SetSnapsTo`。FFI 槽位已由 bindgen 投影（`bindings.rs:14565-14570`），**遵守 PLAN 禁手刻槽位惯例，不碰 bindings.rs**。估 60-80 行，纯加性 |
+| B2 | **ThemeShadow widget 透出**（供 A1 配影） | FFI 已投影 `IThemeShadow`+工厂（`bindings.rs:16607`）与 `UIElement.SetShadow/SetTranslation`（`:18206,18236`）；widget 层（Border/通用 modifiers）加 elevation 字段 → mount 臂：创建 ThemeShadow、`SetShadow`、`Receivers.Add(transcript 滚动区)`、`SetTranslation(z)`。估 60-100 行。**全 app 仅 composer 一处用影**（层级信息量最大化）；InfoPanel 明确不加——停靠列的层级语言是底色/描边（Fluent 分层规范），非投影 |
 
 补上后强度柄写法：`Slider::new(v).range(0,3).step(1).tick_frequency(1).tick_placement(Outside).snaps_to(Ticks)`。
 （历史备注：曾因 vendor 上游同步挂起；2026-08-29 上游重写 reactor、同步链终止，vendor 冻结为自有组件，本批次解除挂起。）
