@@ -485,13 +485,31 @@ fn app(cx: &mut RenderCx) -> Element {
             let set_settings_category = set_settings_category.clone();
             let set_history_open = set_history_open.clone();
             move |tag: String| {
+                // BUG-F1：NavigationView 对程序性选中变更（selected_tag 下发、
+                // MenuItems 清空重建）同样触发 SelectionChanged。设置→返回时
+                // 条目集从九分类换回主导航，先触发一次空选（tag=""）回声，
+                // 旧代码把它当用户点击 navigate("") → 视图落到未知 tag →
+                // 四个视图行全 0 高、无组件挂载 → 内容区整片白屏（恢复出
+                // chat 后控件立马卸载）。空 tag 与非可导航 tag 一律忽略。
+                if tag.is_empty() {
+                    log_diag(&format!(
+                        "nav: ignore selection echo (empty tag), view={}",
+                        bridge.current_view_name()
+                    ));
+                    return;
+                }
                 if bridge.current_view_name() == "settings" {
                     // Settings 模式：tag = 分类 id，只切 section 不动路由。
                     set_settings_category.call(tag);
                 } else if tag == "history" {
                     set_history_open.call(true);
-                } else {
+                } else if matches!(tag.as_str(), "home" | "chat" | "skills" | "settings") {
                     bridge.navigate(&tag, None);
+                } else {
+                    log_diag(&format!(
+                        "nav: ignore selection echo tag={tag:?}, view={}",
+                        bridge.current_view_name()
+                    ));
                 }
             }
         })

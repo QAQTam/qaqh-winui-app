@@ -349,6 +349,13 @@ impl super::BridgeCore {
     /// 同步更新壳侧 `current_view`——XAML 视图族据此接管/让出 skills 视图
     /// （main.rs 内容区同 cell 重叠 + opacity 切换，见 WORKFLOW §8）。
     pub(crate) fn navigate(&self, view: &str, seed: Option<&str>) {
+        // BUG-F1 防御：只接受已知视图。未知 tag（如选中回声携带的 "" / 设置
+        // 分类 id）一旦写入 current_view，main.rs 视图族四个分支全不匹配
+        // ——行高全 0 且无组件挂载，内容区整片白屏。
+        if !matches!(view, "home" | "chat" | "skills" | "settings") {
+            log_diag(&format!("navigate: ignore unknown view {view:?}"));
+            return;
+        }
         *self.current_view.lock().unwrap_or_else(|e| e.into_inner()) = view.to_string();
         // WebView 移除：不再 emit shell.navigate（视图切换壳本地持有）。
         if let Some(seed) = seed {

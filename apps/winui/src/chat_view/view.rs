@@ -9,7 +9,7 @@ use windows_reactor::*;
 use crate::bridge::Bridge;
 use crate::chat_adapter;
 
-use super::cache::SessionTranscriptCache;
+use super::cache::{cache_store, cache_take};
 use super::tools::log_diag;
 use super::turns::{TurnProps, turn_memo};
 use super::*;
@@ -23,7 +23,6 @@ pub fn chat_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
     let frame_revoker = cx.use_ref::<Option<EventRevoker>>(None);
     let last_rev = cx.use_ref::<u64>(0);
     let last_seed = cx.use_ref::<String>(String::new());
-    let session_cache = cx.use_ref::<SessionTranscriptCache>(SessionTranscriptCache::default());
     // 显式跟随状态机：按钮/会话切换进入，on_view_changed 离开驱动
     let follow_state = cx.use_ref::<FollowState>(FollowState::Following);
     // 数据规模诊断日志节流基准（5s；见 timer 泵内的 scale 快照）
@@ -31,6 +30,9 @@ pub fn chat_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
     // 已成功 restore 的 seed：空态文案区分"快照已加载但会话为空"（全新
     // 空会话 → "开始新的对话…"）与"快照未到达仍在加载"（→ "加载会话…"）。
     let last_restored_seed = cx.use_ref::<String>(String::new());
+    // BUG-F1：空快照核实轮数（见 EMPTY_SNAPSHOT_VERIFY_MAX）。每次消费到
+    // n==0 快照时递增并重拉核实；n>0 恢复或种子切换时归零。
+    let empty_snapshot_verifications = cx.use_ref::<u32>(0);
     // 跟随尾部滚动请求版本：pump 内容变化时递增（restore/新 turn 立即、
     // live 增量节流），render 时随 list_view.follow_tail 下发
     // ——reconciler 检测版本变化后按 near-tail 判定执行贴底滚动
@@ -78,13 +80,14 @@ pub fn chat_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
     let last_drain = cx.use_ref::<Option<std::time::Instant>>(None);
 
     // 事件泵：drain bridge 队列 → Transcript；rev 变化触发重渲染。
-    cx.use_effect((), {
+    // with_cleanup：卸载时把当前投影移入 bridge 级 transcript 缓存（Fix B）。
+    cx.use_effect_with_cleanup((), {
         let bridge = bridge.clone();
         let transcript = transcript.clone();
         let frame_revoker = frame_revoker.clone();
         let last_rev = last_rev.clone();
         let last_seed = last_seed.clone();
-        let session_cache = session_cache.clone();
+        let empty_snapshot_verifications = empty_snapshot_verifications.clone();
         let last_restored_seed = last_restored_seed.clone();
         let last_scroll_request = last_scroll_request.clone();
         let scroll_version = scroll_version.clone();
@@ -102,16 +105,16 @@ pub fn chat_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
         let recovering = recovering.clone();
         let shimmer_tick = shimmer_tick.clone();
         let last_shimmer_step = last_shimmer_step.clone();
-        move || {
+        move || -> Option<Box<dyn FnOnce()>> {
             if frame_revoker.borrow().is_some() {
-                return;
+                return None;
             }
             match on_frame({
                 let bridge = bridge.clone();
                 let transcript = transcript.clone();
                 let last_rev = last_rev.clone();
                 let last_seed = last_seed.clone();
-                let session_cache = session_cache.clone();
+                let empty_snapshot_verifications = empty_snapshot_verifications.clone();
                 let last_restored_seed = last_restored_seed.clone();
                 let last_scroll_request = last_scroll_request.clone();
                 let scroll_version = scroll_version.clone();
@@ -183,15 +186,14 @@ pub fn chat_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
                             // 不再全量 clone）；restore 侧 entries.remove 对称零拷贝。
                             let mut cached = std::mem::take(&mut *transcript.borrow_mut());
                             cached.trim_to_window();
-                            session_cache
-                                .borrow_mut()
-                                .store(previous_seed, cached);
+                            cache_store(previous_seed, cached);
                         }
                         *last_seed.borrow_mut() = seed.clone();
                         // UI 侧尚未归并的旧会话事件不能跨 seed 留存。bridge
                         // 队列有 seed 过滤，但本地 deferred 队列也必须清空。
                         deferred_events.borrow_mut().clear();
-                        let cached = session_cache.borrow_mut().restore(&seed);
+                        *empty_snapshot_verifications.borrow_mut() = 0;
+                        let cached = cache_take(&seed);
                         let had_cached = cached.is_some();
                         *transcript.borrow_mut() = cached.unwrap_or_else(BlockTranscript::new);
                         *last_restored_seed.borrow_mut() = if had_cached {
@@ -241,26 +243,54 @@ pub fn chat_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
                         let snap_view =
                             chat_adapter::timeline_snapshot(&snap).unwrap_or_default();
                         let n = snap_view.turns.len();
-                        let mut transcript = transcript.borrow_mut();
-                        transcript.restore(&snap_view);
-                        drop(transcript);
-                        *last_restored_seed.borrow_mut() = seed.clone();
-                        // BUG-004 决策：恢复 = 回到最新底部（force_tail），
-                        // 不恢复上次浏览位置。
-                        // 后台恢复完成：熄灭 shimmer 覆盖层（快照内容已
-                        // 就位 + 贴底滚动在同一帧下发，无白屏窗口）。
-                        if recovering.borrow().as_ref() == Some(&seed) {
-                            *recovering.borrow_mut() = None;
-                            log_diag("chat_view: recovery overlay dismissed");
+                        // BUG-F1：n==0 的空快照不得直接作为「已恢复」凭据——
+                        // 单槽里可能驻留会话创建时期的过期空快照，直接采信会
+                        // 覆盖真实内容并熔断重拉（重挂载后永久空白）。先核实：
+                        // 保持加载态并重拉（1s 节流），EMPTY_SNAPSHOT_VERIFY_MAX
+                        // 轮仍为空才采信为真空会话（恢复终态）。
+                        let verified_empty = *empty_snapshot_verifications.borrow()
+                            >= EMPTY_SNAPSHOT_VERIFY_MAX;
+                        if n > 0 || verified_empty {
+                            let mut transcript = transcript.borrow_mut();
+                            transcript.restore(&snap_view);
+                            drop(transcript);
+                            *last_restored_seed.borrow_mut() = seed.clone();
+                            *empty_snapshot_verifications.borrow_mut() = 0;
+                            // BUG-004 决策：恢复 = 回到最新底部（force_tail），
+                            // 不恢复上次浏览位置。
+                            // 后台恢复完成：熄灭 shimmer 覆盖层（快照内容已
+                            // 就位 + 贴底滚动在同一帧下发，无白屏窗口）。
+                            if recovering.borrow().as_ref() == Some(&seed) {
+                                *recovering.borrow_mut() = None;
+                                log_diag("chat_view: recovery overlay dismissed");
+                            }
+                            let now = std::time::Instant::now();
+                            *scroll_version.borrow_mut() += 1;
+                            *force_tail_version.borrow_mut() = Some(*scroll_version.borrow());
+                            *follow_state.borrow_mut() = FollowState::Following;
+                            *last_scroll_request.borrow_mut() = now;
+                            *render_generation.borrow_mut() += 1;
+                            set_render_generation.call(*render_generation.borrow());
+                            if n > 0 {
+                                log_diag(&format!(
+                                    "chat_view: restored {n} turns for {seed} (force_tail)"
+                                ));
+                            } else {
+                                log_diag(&format!(
+                                    "chat_view: empty snapshot accepted as terminal for {seed}"
+                                ));
+                            }
+                        } else {
+                            // 不覆盖既有 transcript（可能来自 Fix B 卸载缓存），
+                            // 保持加载态，主动重拉核实。
+                            *empty_snapshot_verifications.borrow_mut() += 1;
+                            bridge.core().spawn_timeline_refresh(&seed);
+                            log_diag(&format!(
+                                "chat_view: empty snapshot held (verify {}/{}) for {seed}",
+                                *empty_snapshot_verifications.borrow(),
+                                EMPTY_SNAPSHOT_VERIFY_MAX
+                            ));
                         }
-                        let now = std::time::Instant::now();
-                        *scroll_version.borrow_mut() += 1;
-                        *force_tail_version.borrow_mut() = Some(*scroll_version.borrow());
-                        *follow_state.borrow_mut() = FollowState::Following;
-                        *last_scroll_request.borrow_mut() = now;
-                        *render_generation.borrow_mut() += 1;
-                        set_render_generation.call(*render_generation.borrow());
-                        log_diag(&format!("chat_view: restored {n} turns for {seed} (force_tail)"));
                     } else {
                         // 快照缺失（activate_timeline 失败/未达/从未激活）：
                         // 主动重拉——否则冷启动/重建后 ChatView 永久停在
@@ -383,6 +413,19 @@ pub fn chat_view(cx: &mut RenderCx, bridge: Arc<Bridge>) -> Element {
                 }
                 Err(e) => log_diag(&format!("chat_view: on_frame failed: {e}")),
             }
+            // BUG-F1 Fix B：卸载不丢投影——组件子树在离开 chat 视图时整体
+            // 卸载，use_ref（transcript）随之销毁；此处是唯一能把当前投影
+            // 移入 bridge 级缓存的机会（返回 chat 时零等待恢复，随后台快照
+            // 刷新校正漂移）。空投影不落缓存（保持「加载会话」语义）。
+            Some(Box::new(move || {
+                let seed = bridge.core().active_seed();
+                let mut cached = std::mem::take(&mut *transcript.borrow_mut());
+                if seed.is_empty() || cached.turns().is_empty() {
+                    return;
+                }
+                cached.trim_to_window();
+                cache_store(seed, cached);
+            }))
         }
     });
 

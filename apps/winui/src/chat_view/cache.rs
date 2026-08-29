@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 
 use markdown_winui::BlockTranscript;
@@ -33,6 +34,27 @@ impl SessionTranscriptCache {
         self.order.retain(|item| item != seed);
         self.entries.remove(seed)
     }
+}
+
+thread_local! {
+    /// UI 线程驻留的会话投影缓存（BUG-F1 Fix B）。离开 chat 视图时组件
+    /// 子树整体卸载、use_ref 随之销毁，但本线程静态仍保有最近会话的
+    /// 投影——返回 chat 时零等待恢复（随后台快照刷新校正漂移）。
+    /// BlockTranscript 内含 Rc（非 Send），不能进 BridgeCore 的 Mutex
+    /// （Arc<BridgeCore> 被 tokio 任务跨线程持有）；reactor 全部视图运行
+    /// 在单一 UI 线程（engine.debug_assert_on_ui_thread），RefCell 足够。
+    static SESSION_TRANSCRIPTS: RefCell<SessionTranscriptCache> =
+        RefCell::new(SessionTranscriptCache::default());
+}
+
+/// 卸载 cleanup / 切会话分支写入（move 入缓存，零拷贝）。
+pub(super) fn cache_store(seed: String, transcript: BlockTranscript) {
+    SESSION_TRANSCRIPTS.with(|cache| cache.borrow_mut().store(seed, transcript));
+}
+
+/// 重挂载首帧 / 切会话分支读取（move 出缓存，零拷贝）。
+pub(super) fn cache_take(seed: &str) -> Option<BlockTranscript> {
+    SESSION_TRANSCRIPTS.with(|cache| cache.borrow_mut().restore(seed))
 }
 
 #[cfg(test)]

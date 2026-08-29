@@ -58,6 +58,13 @@ const LIVE_RENDER_INTERVAL: Duration = Duration::from_millis(8);
 const CHAT_EVENTS_PER_FRAME: usize = 512;
 const CHAT_REDUCER_BUDGET: Duration = Duration::from_millis(4);
 
+/// BUG-F1（设置往返空白）：空快照核实轮数上限。空快照（n==0）不得直接
+/// 作为「已恢复」凭据——单槽缓存里可能驻留会话创建时期的过期空快照，
+/// 直接采信会覆盖真实内容并熔断重拉（last_restored_seed 置位后重拉
+/// 永久停止）。先经此轮数主动重拉核实（1s 节流），仍为空才采信为真空
+/// 会话并进入恢复终态。
+const EMPTY_SNAPSHOT_VERIFY_MAX: u32 = 2;
+
 /// transport drain 闸：8ms 下限使 60Hz/120Hz 的 vsync 回调均可逐帧取数，
 /// 避免原 32ms 批处理造成明显的成批吐字。单帧仍受 512 事件上限和 reducer
 /// 4ms 墙钟预算保护；滚动与 XAML 提交还有各自独立预算。
