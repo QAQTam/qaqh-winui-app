@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Version](https://img.shields.io/badge/version-0.0.0--alpha.0-orange)
 
-**QAQ-Harness Windows 桌面层** —— 原生 WinUI 3 桌面壳 + 安装器 + 更新器。后端（daemon / workspace）位于独立的 [QAQ-Harness](../QAQ-Harness) monorepo，本仓库通过 path 依赖其 `qaqh-client` / `qaqh-types` crate。
+**QAQ-Harness Windows 桌面层** —— 原生 WinUI 3 桌面壳 + 安装器 + 更新器。后端（daemon / workspace）位于独立的 [qaqh-backend](https://github.com/QAQTam/qaqh-backend) monorepo，本仓库通过 path 依赖其 `qaqh-client` / `qaqh-types` crate。
 
 > 无 WebView：全部界面由 [windows-reactor](https://github.com/QAQTam/qaqh-winui-reactor-vendor) fork 以 React 风格 hooks 直接驱动原生 XAML 控件树。
 
@@ -47,7 +47,7 @@ version.txt                    # 版本号单一来源（sync-version 同步到 
 - Windows 10/11 + WinUI 3 运行时（Windows App SDK）
 - Rust（edition 2024，MSVC toolchain）
 - [just](https://github.com/casey/just)（命令入口）、PowerShell 7（pwsh）
-- 后端仓库需克隆为本仓库的兄弟目录：`../QAQ-Harness`
+- 后端仓库需克隆为本仓库的兄弟目录：`../qaqh-backend`
 - 下游 windows-rs fork 固定 rev（见根 `Cargo.toml`），本地开发可用 `just downstream switch/status` 在 fork 本地路径与 git rev 间切换
 
 ## 快速开始
@@ -102,7 +102,7 @@ just sync-version    # 从 version.txt 同步版本号
 
 ## 相关仓库
 
-- 后端 monorepo：`QAQ-Harness`（daemon / workspace / qaqh-client / qaqh-types）
+- 后端 monorepo：`qaqh-backend`（daemon / workspace / qaqh-client / qaqh-types）
 - 下游 UI fork：[qaqh-winui-reactor-vendor](https://github.com/QAQTam/qaqh-winui-reactor-vendor)
 
 ## 许可证

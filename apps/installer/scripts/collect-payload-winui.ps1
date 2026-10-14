@@ -3,7 +3,7 @@
 # full 包的 desktop 组件来自 winui 运行目录（apps/winui/release/winui-app）。
 # 目前仅支持 -Kind full（frontend/backend 更新源后续接入）。
 # 版本来源：version.txt（权威）+ qaqh-backend.lock.json（后端仓库版本锁；
-#         分仓模式默认 ../QAQ-Harness，可用 -BackendRoot 覆盖）
+#         分仓模式默认 ../qaqh-backend，可用 -BackendRoot 覆盖）
 #         + apps/winui/out/sidecar/daemon-manifest.json（daemon 侧信息）。
 
 param(
@@ -12,7 +12,7 @@ param(
     [string]$PayloadDir = "",
     [string]$BuildId = "",
     [string]$WinuiRoot = "apps/winui/release/winui-app",
-    [string]$BackendRoot = "../QAQ-Harness"
+    [string]$BackendRoot = "../qaqh-backend"
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,7 +20,7 @@ $ErrorActionPreference = "Stop"
 $workspaceRoot = (Resolve-Path ".").Path
 $stagingRoot = [System.IO.Path]::GetFullPath((Join-Path $workspaceRoot "apps/installer/staging"))
 $appVersion = (Get-Content (Join-Path $workspaceRoot "version.txt")).Trim()
-# 版本锁由后端仓库维护：分仓模式从 BackendRoot（默认 ../QAQ-Harness）读取。
+# 版本锁由后端仓库维护：分仓模式从 BackendRoot（默认 ../qaqh-backend）读取。
 $lockRoot = $workspaceRoot
 if (-not [string]::IsNullOrWhiteSpace($BackendRoot)) {
     $lockRoot = (Resolve-Path $BackendRoot).Path

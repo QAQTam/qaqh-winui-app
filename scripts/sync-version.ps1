@@ -39,4 +39,4 @@ $pkg.version = $v
 ($pkg | ConvertTo-Json -Depth 8) + [Environment]::NewLine |
     Set-Content $RootPkgJson -Encoding UTF8
 
-Write-Host "Done — $v synced to Cargo.toml and package.json (backend lock lives in ../QAQ-Harness)"
+Write-Host "Done — $v synced to Cargo.toml and package.json (backend lock lives in ../qaqh-backend)"

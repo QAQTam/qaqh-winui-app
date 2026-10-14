@@ -7,10 +7,10 @@ license = "MIT"
 publish = false
 
 [dependencies]
-qaqh-client = { path = "../../../QAQ-Harness/crates/qaqh-client" }
-qaqh-config-api = { path = "../../../QAQ-Harness/crates/qaqh-config-api" }
+qaqh-client = { path = "../../../qaqh-backend/crates/qaqh-client" }
+qaqh-config-api = { path = "../../../qaqh-backend/crates/qaqh-config-api" }
 # BUG-013：工具模式单一契约（KNOWN_MODES / is_known / preset_tools）。
-qaqh-types = { path = "../../../QAQ-Harness/crates/qaqh-types" }
+qaqh-types = { path = "../../../qaqh-backend/crates/qaqh-types" }
 qaqh-fluent = { path = "../../crates/qaqh-fluent" }
 # 桌面通知：Microsoft.Windows.AppNotifications WinMD 绑定（Phase 1）
 qaqh-app-notifications = { path = "../../crates/qaqh-app-notifications" }
