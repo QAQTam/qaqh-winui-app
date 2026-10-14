@@ -1,6 +1,6 @@
 # qaqh-winui-app
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
 ![Version](https://img.shields.io/badge/version-0.0.0--alpha.0-orange)
 
 **QAQ-Harness Windows 桌面层** —— 原生 WinUI 3 桌面壳 + 安装器 + 更新器。后端（daemon / workspace）位于独立的 [qaqh-backend](https://github.com/QAQTam/qaqh-backend) monorepo，本仓库通过 path 依赖其 `qaqh-client` / `qaqh-types` crate。
@@ -107,4 +107,4 @@ just sync-version    # 从 version.txt 同步版本号
 
 ## 许可证
 
-[MIT](LICENSE)
+[MIT OR Apache-2.0](LICENSE-MIT)

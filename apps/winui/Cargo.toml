@@ -3,7 +3,7 @@ name = "qaqh-winui"
 version.workspace = true
 edition = "2024"
 description = "QAQ-Harness WinUI desktop shell — windows-reactor 原生 XAML 视图族（WebView 已移除）"
-license = "MIT"
+license.workspace = true
 publish = false
 
 [dependencies]

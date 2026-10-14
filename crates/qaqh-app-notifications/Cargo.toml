@@ -2,6 +2,7 @@
 name = "qaqh-app-notifications"
 version.workspace = true
 edition = "2024"
+license.workspace = true
 description = "Microsoft.Windows.AppNotifications (Windows App SDK) WinMD bindings + QAQ-Harness wrapper"
 
 [dependencies]
